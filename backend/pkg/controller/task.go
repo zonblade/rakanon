@@ -10,6 +10,8 @@ import (
 	obs "pentagi/pkg/observability"
 	"pentagi/pkg/providers"
 	"pentagi/pkg/tools"
+	
+	"github.com/sirupsen/logrus"
 )
 
 type FlowUpdater interface {
