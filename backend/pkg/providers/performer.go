@@ -57,13 +57,19 @@ func (fp *flowProvider) performAgentChain(
 		summarizerHandler = fp.GetSummarizeResultHandler(taskID, subtaskID)
 	)
 
+
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"agent":        fp.Type(),
-		"flow_id":      fp.flowID,
-		"task_id":      taskID,
-		"subtask_id":   subtaskID,
-		"msg_chain_id": chainID,
+		"component":      "pentagi-tools-calling",
+		"action":         "perform_agent_chain",
+		"agent":          fp.Type(),
+		"flow_id":        fp.flowID,
+		"task_id":        taskID,
+		"subtask_id":     subtaskID,
+		"msg_chain_id":   chainID,
+		"agent_type":     optAgentType,
 	})
+	logger.Info("=== TOOLS CALLING: Starting agent chain execution ===")
+
 
 	executionContext, err := fp.getExecutionContext(ctx, taskID, subtaskID)
 	if err != nil {
@@ -72,11 +78,24 @@ func (fp *flowProvider) performAgentChain(
 	}
 
 	for {
+		logger.WithFields(logrus.Fields{
+			"chain_length":     len(chain),
+			"available_tools":  len(executor.Tools()),
+			"iteration":        "chain_loop",
+		}).Info("=== TOOLS CALLING: Agent chain iteration ===")
+
 		result, err := fp.callWithRetries(ctx, chain, optAgentType, executor)
 		if err != nil {
 			logger.WithError(err).Error("failed to call agent chain")
 			return err
 		}
+
+		logger.WithFields(logrus.Fields{
+			"func_calls_count": len(result.funcCalls),
+			"has_content":      len(result.content) > 0,
+			"has_thinking":     len(result.thinking) > 0,
+			"stream_id":        result.streamID,
+		}).Info("=== TOOLS CALLING: LLM response received ===")
 
 		if err := fp.updateMsgChainUsage(ctx, chainID, result.info); err != nil {
 			logger.WithError(err).Error("failed to update msg chain usage")
@@ -191,13 +210,18 @@ func (fp *flowProvider) execToolCall(
 	funcArgs := json.RawMessage(toolCall.FunctionCall.Arguments)
 
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"agent":        fp.Type(),
-		"flow_id":      fp.flowID,
-		"func_name":    funcName,
-		"func_args":    string(funcArgs)[:min(1000, len(funcArgs))],
-		"tool_call_id": toolCall.ID,
-		"msg_chain_id": chainID,
+		"component":      "pentagi-tools-calling",
+		"action":         "exec_tool_call",
+		"agent":          fp.Type(),
+		"flow_id":        fp.flowID,
+		"func_name":      funcName,
+		"tool_call_id":   toolCall.ID,
+		"tool_call_idx":  toolCallIDx,
+		"msg_chain_id":   chainID,
+		"args_size":      len(funcArgs),
 	})
+	logger.Info("=== TOOLS CALLING: Executing tool call ===")
+
 
 	ctx, observation := obs.Observer.NewObservation(ctx)
 	opts := []langfuse.EventStartOption{
@@ -208,6 +232,10 @@ func (fp *flowProvider) execToolCall(
 			"tool_name":    funcName,
 		}),
 	}
+	
+	logger.WithFields(logrus.Fields{
+		"tool_args": string(funcArgs)[:min(500, len(funcArgs))],
+	}).Info("=== TOOLS CALLING: Tool arguments ===")
 
 	if detector.detect(toolCall) {
 		response := fmt.Sprintf("tool call '%s' is repeating, please try another tool", funcName)
@@ -236,6 +264,12 @@ func (fp *flowProvider) execToolCall(
 
 		response, err = executor.Execute(ctx, streamID, toolCall.ID, funcName, thinking, funcArgs)
 		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"response_size":   len(response),
+				"response_preview": response[:min(300, len(response))],
+				"success":         true,
+			}).Info("=== TOOLS CALLING: Tool call completed successfully ===")
+			
 			if errors.Is(err, context.Canceled) {
 				return "", err
 			}
@@ -259,6 +293,11 @@ func (fp *flowProvider) execToolCall(
 				return "", fmt.Errorf("failed to fix tool call args: %w", err)
 			}
 		} else {
+			logger.WithFields(logrus.Fields{
+				"error":    err.Error(),
+				"retry":    idx,
+				"success":  false,
+			}).Warn("=== TOOLS CALLING: Tool call failed, retrying ===")
 			break
 		}
 	}
@@ -284,11 +323,25 @@ func (fp *flowProvider) callWithRetries(
 		resp    *llms.ContentResponse
 		result  callResult
 	)
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component":    "pentagi-tools-calling",
+		"action":       "call_with_retries",
+		"agent_type":   optAgentType,
+		"chain_length": len(chain),
+		"max_retries":  maxRetriesToCallAgentChain,
+	})
+	logger.Info("=== TOOLS CALLING: LLM call with retries ===")
+
 
 	ticker := time.NewTicker(delayBetweenRetries)
 	defer ticker.Stop()
 
 	for idx := 0; idx <= maxRetriesToCallAgentChain; idx++ {
+		logger.WithFields(logrus.Fields{
+			"attempt": idx + 1,
+			"stream_id": result.streamID,
+		}).Info("=== TOOLS CALLING: LLM call attempt ===")
+
 		if idx == maxRetriesToCallAgentChain {
 			msg := fmt.Sprintf("failed to call agent chain: max retries reached, %d", idx)
 			return nil, fmt.Errorf(msg+": %w", err)
@@ -328,7 +381,19 @@ func (fp *flowProvider) callWithRetries(
 
 		resp, err = fp.CallWithTools(ctx, optAgentType, chain, executor.Tools(), streamCb)
 		if err == nil {
+			logger.WithFields(logrus.Fields{
+				"attempts":        idx + 1,
+				"choices_count":   len(resp.Choices),
+				"tool_calls":      len(result.funcCalls),
+				"content_length":  len(result.content),
+				"thinking_length": len(result.thinking),
+			}).Info("=== TOOLS CALLING: LLM call successful ===")
 			break
+		}else{
+			logger.WithFields(logrus.Fields{
+				"attempt": idx + 1,
+				"error":   err.Error(),
+			}).Warn("=== TOOLS CALLING: LLM call failed, retrying ===")
 		}
 
 		ticker.Reset(delayBetweenRetries)

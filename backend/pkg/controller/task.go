@@ -47,6 +47,14 @@ func NewTaskWorker(
 	input string,
 	updater FlowUpdater,
 ) (TaskWorker, error) {
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component":    "pentagi-automation-planning",
+		"action":       "new_task_worker",
+		"flow_id":      flowCtx.FlowID,
+		"input_length": len(input),
+	})
+	logger.Info("=== AUTOMATION PLANNING: Creating task worker ===")
+
 	ctx, span := obs.Observer.NewSpan(ctx, obs.SpanKindInternal, "controller.NewTaskWorker")
 	defer span.End()
 
@@ -66,6 +74,11 @@ func NewTaskWorker(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task in DB: %w", err)
 	}
+	logger.WithFields(logrus.Fields{
+		"task_id":    task.ID,
+		"task_title": title,
+		"task_input": input[:min(200, len(input))],
+	}).Info("=== AUTOMATION PLANNING: Task created ===")
 
 	flowCtx.Publisher.TaskCreated(ctx, task, []database.Subtask{})
 
@@ -99,6 +112,10 @@ func NewTaskWorker(
 	}
 
 	flowCtx.Publisher.TaskUpdated(ctx, task, subtasks)
+
+	logger.WithFields(logrus.Fields{
+		"subtasks_generated": len(subtasks),
+	}).Info("=== AUTOMATION PLANNING: Task worker created with subtasks ===")
 
 	return &taskWorker{
 		mx:        &sync.RWMutex{},
@@ -279,9 +296,22 @@ func (tw *taskWorker) PutInput(ctx context.Context, input string) error {
 }
 
 func (tw *taskWorker) Run(ctx context.Context) error {
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component": "pentagi-automation-planning",
+		"action":    "run_task",
+		"task_id":   tw.taskCtx.TaskID,
+		"flow_id":   tw.taskCtx.FlowID,
+	})
+	logger.Info("=== AUTOMATION PLANNING: Running task execution ===")
+
 	ctx = tools.PutAgentContext(ctx, database.MsgchainTypePrimaryAgent)
 
 	for len(tw.stc.ListSubtasks(ctx)) < providers.TasksNumberLimit+3 {
+		logger.WithFields(logrus.Fields{
+			"subtasks_remaining": len(tw.stc.ListSubtasks(ctx)),
+			"task_limit":         providers.TasksNumberLimit,
+		}).Info("=== AUTOMATION PLANNING: Processing next subtask ===")
+
 		st, err := tw.stc.PopSubtask(ctx, tw)
 		if err != nil {
 			return err
@@ -292,9 +322,19 @@ func (tw *taskWorker) Run(ctx context.Context) error {
 			break
 		}
 
+
+		logger.WithFields(logrus.Fields{
+			"subtask_id":    st.GetSubtaskID(),
+			"subtask_title": st.GetTitle(),
+		}).Info("=== AUTOMATION PLANNING: Executing subtask ===")
+
 		if err := st.Run(ctx); err != nil {
+			logger.WithError(err).Error("=== AUTOMATION PLANNING: Subtask execution failed ===")
 			return err
 		}
+
+		logger.Info("=== AUTOMATION PLANNING: Subtask completed, refining remaining tasks ===")
+		
 
 		// pass through if task is waiting from back status propagation
 		if tw.IsWaiting() {
@@ -343,6 +383,11 @@ func (tw *taskWorker) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to put report for task %d: %w", tw.taskCtx.TaskID, err)
 	}
+	
+	logger.WithFields(logrus.Fields{
+		"result_success": jobResult.Success,
+		"result_length":  len(jobResult.Result),
+	}).Info("=== AUTOMATION PLANNING: Task execution completed ===")
 
 	return nil
 }

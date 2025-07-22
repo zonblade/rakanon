@@ -117,6 +117,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./conf/openrouter.provider.yml:/opt/pentagi/conf/openrouter.provider.yml
       - ./.env:/opt/pentagi/.env
+      - ./log:/log
     user: root:root # while using docker.sock
     networks:
       - pentagi-network

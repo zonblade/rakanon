@@ -202,7 +202,13 @@ func (fp *flowProvider) GenerateSubtasks(ctx context.Context, taskID int64) ([]t
 	ctx, span := obs.Observer.NewSpan(ctx, obs.SpanKindInternal, "providers.flowProvider.GenerateSubtasks")
 	defer span.End()
 
-	logger := logrus.WithContext(ctx).WithField("task_id", taskID)
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component": "pentagi-automation-planning",
+		"action":    "generate_subtasks",
+		"flow_id":   fp.flowID,
+		"task_id":   taskID,
+	})
+	logger.Info("=== AUTOMATION PLANNING: Generating subtasks ===")
 
 	tasksInfo, err := fp.getTasksInfo(ctx, taskID)
 	if err != nil {
@@ -275,6 +281,17 @@ func (fp *flowProvider) GenerateSubtasks(ctx context.Context, taskID int64) ([]t
 		langfuse.WithEndSpanStatus("success"),
 		langfuse.WithEndSpanOutput(subtasks),
 	)
+
+	logger.WithFields(logrus.Fields{
+		"subtasks_count": len(subtasks),
+		"subtask_titles": func() []string {
+			titles := make([]string, len(subtasks))
+			for i, st := range subtasks {
+				titles[i] = st.Title
+			}
+			return titles
+		}(),
+	}).Info("=== AUTOMATION PLANNING: Subtasks generated ===")
 
 	return subtasks, nil
 }
@@ -470,10 +487,14 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 	defer span.End()
 
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"flow_id":    fp.flowID,
-		"task_id":    taskID,
-		"subtask_id": subtaskID,
+		"component":    "pentagi-automation-planning",
+		"action":       "prepare_agent_chain",
+		"flow_id":      fp.flowID,
+		"task_id":      taskID,
+		"subtask_id":   subtaskID,
 	})
+	logger.Info("=== AUTOMATION PLANNING: Preparing agent chain ===")
+
 
 	subtask, err := fp.db.GetSubtask(ctx, subtaskID)
 	if err != nil {
@@ -527,6 +548,18 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 		return 0, fmt.Errorf("failed to restore primary agent msg chain: %w", err)
 	}
 
+	logger.WithFields(logrus.Fields{
+		"subtask_title":       subtask.Title,
+		"subtask_description": subtask.Description[:min(200, len(subtask.Description))],
+		"execution_context":   executionContext[:min(300, len(executionContext))],
+		"template_tools":      []string{
+			tools.FinalyToolName,
+			tools.SearchToolName, 
+			tools.PentesterToolName,
+			tools.CoderToolName,
+		},
+	}).Info("=== AUTOMATION PLANNING: Agent chain prepared ===")
+
 	return msgChainID, nil
 }
 
@@ -535,11 +568,15 @@ func (fp *flowProvider) PerformAgentChain(ctx context.Context, taskID, subtaskID
 	defer span.End()
 
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"flow_id":      fp.flowID,
-		"task_id":      taskID,
-		"subtask_id":   subtaskID,
-		"msg_chain_id": msgChainID,
+		"component":      "pentagi-automation-planning",
+		"action":         "perform_agent_chain",
+		"flow_id":        fp.flowID,
+		"task_id":        taskID,
+		"subtask_id":     subtaskID,
+		"msg_chain_id":   msgChainID,
 	})
+	logger.Info("=== AUTOMATION PLANNING: Executing subtask ===")
+
 
 	msgChain, err := fp.db.GetMsgChain(ctx, msgChainID)
 	if err != nil {
@@ -613,6 +650,16 @@ func (fp *flowProvider) PerformAgentChain(ctx context.Context, taskID, subtaskID
 	ctx, _ = executorSpan.Observation(ctx)
 
 	performResult := PerformResultError
+
+	logger.WithFields(logrus.Fields{
+		"subtask_description": subtask.Description[:min(200, len(subtask.Description))],
+		"model_provider":      fp.Type(),
+		"image":              fp.image,
+		"language":           fp.language,
+		"available_specialists": []string{"adviser", "coder", "installer", "memorist", "pentester", "searcher"},
+	}).Info("=== AUTOMATION PLANNING: Subtask execution started ===")
+
+
 	cfg := tools.PrimaryExecutorConfig{
 		TaskID:    taskID,
 		SubtaskID: subtaskID,
@@ -739,6 +786,11 @@ func (fp *flowProvider) PerformAgentChain(ctx context.Context, taskID, subtaskID
 	}
 
 	executorSpan.End()
+
+	logger.WithFields(logrus.Fields{
+		"result": performResult,
+		"success": performResult == PerformResultDone,
+	}).Info("=== AUTOMATION PLANNING: Subtask execution completed ===")
 
 	return performResult, nil
 }

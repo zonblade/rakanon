@@ -111,10 +111,13 @@ func (ap *assistantProvider) PerformAgentChain(ctx context.Context) error {
 	defer span.End()
 
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"assistant_id": ap.id,
-		"flow_id":      ap.fp.flowID,
-		"msg_chain_id": ap.msgChainID,
+		"component":      "pentagi-automation-chat",
+		"action":         "perform_agent_chain",
+		"assistant_id":   ap.id,
+		"flow_id":        ap.fp.flowID,
+		"msg_chain_id":   ap.msgChainID,
 	})
+	logger.Info("=== AUTOMATION CHAT: Starting agent execution ===")
 
 	useAgents, err := ap.getAssistantUseAgents(ctx)
 	if err != nil {
@@ -185,6 +188,12 @@ func (ap *assistantProvider) PerformAgentChain(ctx context.Context) error {
 	)
 	ctx, _ = executorSpan.Observation(ctx)
 
+	logger.WithFields(logrus.Fields{
+		"use_agents":     useAgents,
+		"chain_length":   len(chain),
+		"handlers_count": 6, // adviser, coder, installer, memorist, pentester, searcher
+	}).Info("=== AUTOMATION CHAT: Agent execution configured ===")
+
 	cfg := tools.AssistantExecutorConfig{
 		UseAgents:  useAgents,
 		Adviser:    adviser,
@@ -208,7 +217,7 @@ func (ap *assistantProvider) PerformAgentChain(ctx context.Context) error {
 	if err != nil {
 		return wrapErrorEndSpan(ctx, executorSpan, "failed to perform assistant agent chain", err)
 	}
-
+	
 	executorSpan.End()
 
 	return nil
@@ -240,6 +249,18 @@ func (ap *assistantProvider) EnsureChainConsistency(ctx context.Context) error {
 func (ap *assistantProvider) updateAssistantChain(
 	ctx context.Context, chain []llms.MessageContent, humanPrompt string,
 ) ([]llms.MessageContent, error) {
+	
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component":     "pentagi-automation-chat",
+		"action":        "update_chain",
+		"assistant_id":  ap.id,
+		"flow_id":       ap.fp.flowID,
+		"chain_length":  len(chain),
+		"prompt_length": len(humanPrompt),
+	})
+	
+	logger.Info("=== AUTOMATION CHAT: Updating conversation chain ===")
+
 	systemPrompt, err := ap.getAssistantSystemPrompt(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assistant system prompt: %w", err)
@@ -262,7 +283,13 @@ func (ap *assistantProvider) updateAssistantChain(
 
 	ast.AppendHumanMessage(humanPrompt)
 
-	return ast.Messages(), nil
+	updatedChain := ast.Messages()
+	logger.WithFields(logrus.Fields{
+		"new_chain_length": len(updatedChain),
+		"human_prompt":     humanPrompt[:min(200, len(humanPrompt))],
+	}).Info("=== AUTOMATION CHAT: Conversation chain updated ===")
+
+	return updatedChain, nil
 }
 
 func (ap *assistantProvider) getAssistantUseAgents(ctx context.Context) (bool, error) {
@@ -271,9 +298,12 @@ func (ap *assistantProvider) getAssistantUseAgents(ctx context.Context) (bool, e
 
 func (ap *assistantProvider) getAssistantSystemPrompt(ctx context.Context) (string, error) {
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component":    "pentagi-automation-chat",
+		"action":       "get_system_prompt", 
 		"assistant_id": ap.id,
 		"flow_id":      ap.fp.flowID,
 	})
+	logger.Info("=== AUTOMATION CHAT: Generating system prompt ===")
 
 	useAgents, err := ap.getAssistantUseAgents(ctx)
 	if err != nil {
@@ -321,6 +351,16 @@ func (ap *assistantProvider) getAssistantSystemPrompt(ctx context.Context) (stri
 		return "", fmt.Errorf("failed to get system prompt for assistant template: %w", err)
 	}
 
+	logger.WithFields(logrus.Fields{
+		"use_agents":       useAgents,
+		"prompt_length":    len(systemAssistantTmpl),
+		"available_tools":  len(map[string]string{
+			"SearchTool": tools.SearchToolName,
+			"PentesterTool": tools.PentesterToolName,
+			"CoderTool": tools.CoderToolName,
+		}),
+	}).Info("=== AUTOMATION CHAT: System prompt generated successfully ===")
+	
 	return systemAssistantTmpl, nil
 }
 
