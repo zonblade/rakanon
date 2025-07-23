@@ -458,6 +458,21 @@ func (fp *flowProvider) performCoder(
 		msgChainType = database.MsgchainTypeCoder
 	)
 
+	// LOG CODER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-coder-execution",
+		"action":    "coder_execution_start",
+		"flow":      1,
+		"system_prompt": systemCoderTmpl,
+		"user_prompt":   userCoderTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Coder Execution Started ===")
+
 	adviser, err := fp.GetAskAdviceHandler(ctx, taskID, subtaskID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get adviser handler: %w", err)
@@ -490,6 +505,20 @@ func (fp *flowProvider) performCoder(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG CODE RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-coder-execution",
+				"action":    "code_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"code_result": codeResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Code Result Tool Called ===")
+			
 			return "code result successfully processed", nil
 		},
 		Summarizer: fp.GetSummarizeResultHandler(taskID, subtaskID),
@@ -512,6 +541,18 @@ func (fp *flowProvider) performCoder(
 		return "", fmt.Errorf("failed to get task coder result: %w", err)
 	}
 
+	// LOG CODER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-coder-execution",
+		"action":    "coder_execution_complete",
+		"flow":      1,
+		"final_code_result": codeResult,
+		"task_id":           taskID,
+		"subtask_id":        subtaskID,
+		"msg_chain_id":      msgChainID,
+	}).Info("=== PROMPT EXECUTION: Coder Execution Complete ===")
+
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
 			ctx,
@@ -527,6 +568,7 @@ func (fp *flowProvider) performCoder(
 	return codeResult.Result, nil
 }
 
+
 func (fp *flowProvider) performInstaller(
 	ctx context.Context,
 	taskID, subtaskID *int64,
@@ -537,6 +579,21 @@ func (fp *flowProvider) performInstaller(
 		optAgentType      = provider.OptionsTypeInstaller
 		msgChainType      = database.MsgchainTypeInstaller
 	)
+
+	// LOG INSTALLER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-installer-execution",
+		"action":    "installer_execution_start",
+		"flow":      1,
+		"system_prompt": systemInstallerTmpl,
+		"user_prompt":   userInstallerTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Installer Execution Started ===")
 
 	adviser, err := fp.GetAskAdviceHandler(ctx, taskID, subtaskID)
 	if err != nil {
@@ -564,6 +621,20 @@ func (fp *flowProvider) performInstaller(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG MAINTENANCE RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-installer-execution",
+				"action":    "maintenance_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"maintenance_result": maintenanceResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Maintenance Result Tool Called ===")
+			
 			return "maintenance result successfully processed", nil
 		},
 		Summarizer: fp.GetSummarizeResultHandler(taskID, subtaskID),
@@ -586,6 +657,18 @@ func (fp *flowProvider) performInstaller(
 		return "", fmt.Errorf("failed to get task installer result: %w", err)
 	}
 
+	// LOG INSTALLER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-installer-execution",
+		"action":    "installer_execution_complete",
+		"flow":      1,
+		"final_maintenance_result": maintenanceResult,
+		"task_id":                  taskID,
+		"subtask_id":               subtaskID,
+		"msg_chain_id":             msgChainID,
+	}).Info("=== PROMPT EXECUTION: Installer Execution Complete ===")
+
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
 			ctx,
@@ -601,6 +684,7 @@ func (fp *flowProvider) performInstaller(
 	return maintenanceResult.Result, nil
 }
 
+
 func (fp *flowProvider) performMemorist(
 	ctx context.Context,
 	taskID, subtaskID *int64,
@@ -612,6 +696,21 @@ func (fp *flowProvider) performMemorist(
 		msgChainType   = database.MsgchainTypeMemorist
 	)
 
+	// LOG MEMORIST EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-memorist-execution",
+		"action":    "memorist_execution_start",
+		"flow":      1,
+		"system_prompt": systemMemoristTmpl,
+		"user_prompt":   userMemoristTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Memorist Execution Started ===")
+
 	cfg := tools.MemoristExecutorConfig{
 		TaskID:    taskID,
 		SubtaskID: subtaskID,
@@ -620,6 +719,20 @@ func (fp *flowProvider) performMemorist(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG MEMORIST SEARCH RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-memorist-execution",
+				"action":    "memorist_search_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"memorist_result": memoristResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Memorist Search Result Tool Called ===")
+			
 			return "memorist result successfully processed", nil
 		},
 		Summarizer: fp.GetSummarizeResultHandler(taskID, subtaskID),
@@ -641,6 +754,18 @@ func (fp *flowProvider) performMemorist(
 	if err != nil {
 		return "", fmt.Errorf("failed to get task memorist result: %w", err)
 	}
+
+	// LOG MEMORIST EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-memorist-execution",
+		"action":    "memorist_execution_complete",
+		"flow":      1,
+		"final_memorist_result": memoristResult,
+		"task_id":               taskID,
+		"subtask_id":            subtaskID,
+		"msg_chain_id":          msgChainID,
+	}).Info("=== PROMPT EXECUTION: Memorist Execution Complete ===")
 
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
@@ -667,6 +792,21 @@ func (fp *flowProvider) performPentester(
 		optAgentType = provider.OptionsTypePentester
 		msgChainType = database.MsgchainTypePentester
 	)
+
+	// LOG PENTESTER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-pentester-execution",
+		"action":    "pentester_execution_start",
+		"flow":      1,
+		"system_prompt": systemPentesterTmpl,
+		"user_prompt":   userPentesterTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Pentester Execution Started ===")
 
 	adviser, err := fp.GetAskAdviceHandler(ctx, taskID, subtaskID)
 	if err != nil {
@@ -706,6 +846,20 @@ func (fp *flowProvider) performPentester(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG HACK RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-pentester-execution",
+				"action":    "hack_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"hack_result": hackResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Hack Result Tool Called ===")
+			
 			return "hack result successfully processed", nil
 		},
 		Summarizer: fp.GetSummarizeResultHandler(taskID, subtaskID),
@@ -728,6 +882,18 @@ func (fp *flowProvider) performPentester(
 		return "", fmt.Errorf("failed to get task pentester result: %w", err)
 	}
 
+	// LOG PENTESTER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-pentester-execution",
+		"action":    "pentester_execution_complete",
+		"flow":      1,
+		"final_hack_result": hackResult,
+		"task_id":           taskID,
+		"subtask_id":        subtaskID,
+		"msg_chain_id":      msgChainID,
+	}).Info("=== PROMPT EXECUTION: Pentester Execution Complete ===")
+
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
 			ctx,
@@ -743,6 +909,8 @@ func (fp *flowProvider) performPentester(
 	return hackResult.Result, nil
 }
 
+
+
 func (fp *flowProvider) performSearcher(
 	ctx context.Context,
 	taskID, subtaskID *int64,
@@ -753,6 +921,21 @@ func (fp *flowProvider) performSearcher(
 		optAgentType = provider.OptionsTypeSearcher
 		msgChainType = database.MsgchainTypeSearcher
 	)
+
+	// LOG SEARCHER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-searcher-execution",
+		"action":    "searcher_execution_start",
+		"flow":      1,
+		"system_prompt": systemSearcherTmpl,
+		"user_prompt":   userSearcherTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Searcher Execution Started ===")
 
 	memorist, err := fp.GetMemoristHandler(ctx, taskID, subtaskID)
 	if err != nil {
@@ -768,6 +951,20 @@ func (fp *flowProvider) performSearcher(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG SEARCH RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-searcher-execution",
+				"action":    "search_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"search_result": searchResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Search Result Tool Called ===")
+			
 			return "search result successfully processed", nil
 		},
 		Summarizer: fp.GetSummarizeResultHandler(taskID, subtaskID),
@@ -789,6 +986,18 @@ func (fp *flowProvider) performSearcher(
 	if err != nil {
 		return "", fmt.Errorf("failed to get task searcher result: %w", err)
 	}
+
+	// LOG SEARCHER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-searcher-execution",
+		"action":    "searcher_execution_complete",
+		"flow":      1,
+		"final_search_result": searchResult,
+		"task_id":             taskID,
+		"subtask_id":          subtaskID,
+		"msg_chain_id":        msgChainID,
+	}).Info("=== PROMPT EXECUTION: Searcher Execution Complete ===")
 
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
@@ -816,6 +1025,21 @@ func (fp *flowProvider) performEnricher(
 		msgChainType   = database.MsgchainTypeEnricher
 	)
 
+	// LOG ENRICHER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-enricher-execution",
+		"action":    "enricher_execution_start",
+		"flow":      1,
+		"system_prompt": systemEnricherTmpl,
+		"user_prompt":   userEnricherTmpl,
+		"question":      question,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Enricher Execution Started ===")
+
 	memorist, err := fp.GetMemoristHandler(ctx, taskID, subtaskID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get memorist handler: %w", err)
@@ -836,6 +1060,20 @@ func (fp *flowProvider) performEnricher(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal result: %w", err)
 			}
+			
+			// LOG ENRICHER RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-enricher-execution",
+				"action":    "enricher_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"enricher_result": enricherResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Enricher Result Tool Called ===")
+			
 			return "enrich result successfully processed", nil
 		},
 	}
@@ -857,6 +1095,18 @@ func (fp *flowProvider) performEnricher(
 		return "", fmt.Errorf("failed to get task enricher result: %w", err)
 	}
 
+	// LOG ENRICHER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-enricher-execution",
+		"action":    "enricher_execution_complete",
+		"flow":      1,
+		"final_enricher_result": enricherResult,
+		"task_id":               taskID,
+		"subtask_id":            subtaskID,
+		"msg_chain_id":          msgChainID,
+	}).Info("=== PROMPT EXECUTION: Enricher Execution Complete ===")
+
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
 			ctx,
@@ -871,6 +1121,7 @@ func (fp *flowProvider) performEnricher(
 
 	return enricherResult.Result, nil
 }
+
 
 func (fp *flowProvider) performSimpleChain(
 	ctx context.Context,

@@ -263,7 +263,7 @@ func (fp *flowProvider) GetCoderHandler(ctx context.Context, taskID, subtaskID *
 			},
 		}
 
-		ctx, observation := obs.Observer.NewObservation(ctx)
+		coderCtx, observation := obs.Observer.NewObservation(ctx)
 		coderSpan := observation.Span(
 			langfuse.WithStartSpanName("coder agent"),
 			langfuse.WithStartSpanInput(action.Question),
@@ -272,29 +272,72 @@ func (fp *flowProvider) GetCoderHandler(ctx context.Context, taskID, subtaskID *
 				"system_context": coderContext["system"],
 			}),
 		)
-		ctx, _ = coderSpan.Observation(ctx)
+		coderCtx, _ = coderSpan.Observation(coderCtx)
 
+		// === CODER USER PROMPT ===
 		userCoderTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeQuestionCoder, coderContext["user"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, coderSpan, "failed to get user coder template", err)
+			return "", wrapErrorEndSpan(coderCtx, coderSpan, "failed to get user coder template", err)
 		}
 
+		// LOG CODER USER PROMPT
+		logrus.WithContext(coderCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-coder-handler",
+			"action":    "coder_user_prompt",
+			"flow":      1,
+			"prompt":    userCoderTmpl,
+			"params":    coderContext["user"],
+			"prompt_type": templates.PromptTypeQuestionCoder,
+			"question":  action.Question,
+			"code":      "",
+			"output":    action.Message,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Coder User Template Rendered ===")
+
+		// === CODER SYSTEM PROMPT ===
 		systemCoderTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeCoder, coderContext["system"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, coderSpan, "failed to get system coder template", err)
+			return "", wrapErrorEndSpan(coderCtx, coderSpan, "failed to get system coder template", err)
 		}
 
-		code, err := fp.performCoder(ctx, taskID, subtaskID, systemCoderTmpl, userCoderTmpl, action.Question)
+		// LOG CODER SYSTEM PROMPT
+		logrus.WithContext(coderCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-coder-handler",
+			"action":    "coder_system_prompt",
+			"flow":      1,
+			"prompt":    systemCoderTmpl,
+			"params":    coderContext["system"],
+			"prompt_type": templates.PromptTypeCoder,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Coder System Template Rendered ===")
+
+		coderResult, err := fp.performCoder(coderCtx, taskID, subtaskID, systemCoderTmpl, userCoderTmpl, action.Question)
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, coderSpan, "failed to get coder result", err)
+			return "", wrapErrorEndSpan(coderCtx, coderSpan, "failed to get coder result", err)
 		}
+
+		// LOG CODER RESPONSE
+		logrus.WithContext(coderCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-coder-handler",
+			"action":    "coder_response",
+			"flow":      1,
+			"response":  coderResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT RESPONSE: Coder Response Received ===")
 
 		coderSpan.End(
 			langfuse.WithEndSpanStatus("success"),
-			langfuse.WithEndSpanOutput(code),
+			langfuse.WithEndSpanOutput(coderResult),
 		)
 
-		return code, nil
+		return coderResult, nil
 	}
 
 	return func(ctx context.Context, name string, args json.RawMessage) (string, error) {
@@ -303,14 +346,29 @@ func (fp *flowProvider) GetCoderHandler(ctx context.Context, taskID, subtaskID *
 
 		var action tools.CoderAction
 		if err := json.Unmarshal(args, &action); err != nil {
-			logrus.WithContext(ctx).WithError(err).Error("failed to unmarshal code payload")
-			return "", fmt.Errorf("failed to unmarshal code payload: %w", err)
+			logrus.WithContext(ctx).WithError(err).Error("failed to unmarshal coder payload")
+			return "", fmt.Errorf("failed to unmarshal coder payload: %w", err)
 		}
+
+		// LOG CODER HANDLER START
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-coder-handler",
+			"action":    "coder_handler_start",
+			"flow":      1,
+			"tool_name": name,
+			"coder_action": action,
+			"question":  action.Question,
+			"code":      "",
+			"output":    action.Message,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Coder Handler Started ===")
 
 		ctx, observation := obs.Observer.NewObservation(ctx)
 		handlerSpan := observation.Span(
 			langfuse.WithStartSpanName("coder handler"),
-			langfuse.WithStartSpanInput(action),
+			langfuse.WithStartSpanInput(action.Question),
 			langfuse.WithStartSpanMetadata(langfuse.Metadata{
 				"task":    ptrTask,
 				"subtask": ptrSubtask,
@@ -330,6 +388,19 @@ func (fp *flowProvider) GetCoderHandler(ctx context.Context, taskID, subtaskID *
 			return "", err
 		}
 
+		// LOG CODER HANDLER COMPLETE
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-coder-handler",
+			"action":    "coder_handler_complete",
+			"flow":      1,
+			"tool_name": name,
+			"final_result": coderResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Coder Handler Complete ===")
+
 		handlerSpan.End(
 			langfuse.WithEndSpanStatus("success"),
 			langfuse.WithEndSpanOutput(coderResult),
@@ -338,6 +409,7 @@ func (fp *flowProvider) GetCoderHandler(ctx context.Context, taskID, subtaskID *
 		return coderResult, nil
 	}, nil
 }
+
 
 func (fp *flowProvider) GetInstallerHandler(ctx context.Context, taskID, subtaskID *int64) (tools.ExecutorHandler, error) {
 	var (
@@ -391,7 +463,7 @@ func (fp *flowProvider) GetInstallerHandler(ctx context.Context, taskID, subtask
 			},
 		}
 
-		ctx, observation := obs.Observer.NewObservation(ctx)
+		installerCtx, observation := obs.Observer.NewObservation(ctx)
 		installerSpan := observation.Span(
 			langfuse.WithStartSpanName("installer agent"),
 			langfuse.WithStartSpanInput(action.Question),
@@ -400,22 +472,63 @@ func (fp *flowProvider) GetInstallerHandler(ctx context.Context, taskID, subtask
 				"system_context": installerContext["system"],
 			}),
 		)
-		ctx, _ = installerSpan.Observation(ctx)
+		installerCtx, _ = installerSpan.Observation(installerCtx)
 
+		// === INSTALLER USER PROMPT ===
 		userInstallerTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeQuestionInstaller, installerContext["user"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, installerSpan, "failed to get user installer template", err)
+			return "", wrapErrorEndSpan(installerCtx, installerSpan, "failed to get user installer template", err)
 		}
 
+		// LOG INSTALLER USER PROMPT
+		logrus.WithContext(installerCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-installer-handler",
+			"action":    "installer_user_prompt",
+			"flow":      1,
+			"prompt":    userInstallerTmpl,
+			"params":    installerContext["user"],
+			"prompt_type": templates.PromptTypeQuestionInstaller,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Installer User Template Rendered ===")
+
+		// === INSTALLER SYSTEM PROMPT ===
 		systemInstallerTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeInstaller, installerContext["system"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, installerSpan, "failed to get system installer template", err)
+			return "", wrapErrorEndSpan(installerCtx, installerSpan, "failed to get system installer template", err)
 		}
 
-		installerResult, err := fp.performInstaller(ctx, taskID, subtaskID, systemInstallerTmpl, userInstallerTmpl, action.Question)
+		// LOG INSTALLER SYSTEM PROMPT
+		logrus.WithContext(installerCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-installer-handler",
+			"action":    "installer_system_prompt",
+			"flow":      1,
+			"prompt":    systemInstallerTmpl,
+			"params":    installerContext["system"],
+			"prompt_type": templates.PromptTypeInstaller,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Installer System Template Rendered ===")
+
+		installerResult, err := fp.performInstaller(installerCtx, taskID, subtaskID, systemInstallerTmpl, userInstallerTmpl, action.Question)
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, installerSpan, "failed to get installer result", err)
+			return "", wrapErrorEndSpan(installerCtx, installerSpan, "failed to get installer result", err)
 		}
+
+		// LOG INSTALLER RESPONSE
+		logrus.WithContext(installerCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-installer-handler",
+			"action":    "installer_response",
+			"flow":      1,
+			"response":  installerResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT RESPONSE: Installer Response Received ===")
 
 		installerSpan.End(
 			langfuse.WithEndSpanStatus("success"),
@@ -434,6 +547,19 @@ func (fp *flowProvider) GetInstallerHandler(ctx context.Context, taskID, subtask
 			logrus.WithContext(ctx).WithError(err).Error("failed to unmarshal installer payload")
 			return "", fmt.Errorf("failed to unmarshal installer payload: %w", err)
 		}
+
+		// LOG INSTALLER HANDLER START
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-installer-handler",
+			"action":    "installer_handler_start",
+			"flow":      1,
+			"tool_name": name,
+			"installer_action": action,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Installer Handler Started ===")
 
 		ctx, observation := obs.Observer.NewObservation(ctx)
 		handlerSpan := observation.Span(
@@ -457,6 +583,19 @@ func (fp *flowProvider) GetInstallerHandler(ctx context.Context, taskID, subtask
 			)
 			return "", err
 		}
+
+		// LOG INSTALLER HANDLER COMPLETE
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-installer-handler",
+			"action":    "installer_handler_complete",
+			"flow":      1,
+			"tool_name": name,
+			"final_result": installerResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Installer Handler Complete ===")
 
 		handlerSpan.End(
 			langfuse.WithEndSpanStatus("success"),
@@ -636,6 +775,8 @@ func (fp *flowProvider) GetMemoristHandler(ctx context.Context, taskID, subtaskI
 	}, nil
 }
 
+
+
 func (fp *flowProvider) GetPentesterHandler(ctx context.Context, taskID, subtaskID *int64) (tools.ExecutorHandler, error) {
 	var (
 		err        error
@@ -691,7 +832,7 @@ func (fp *flowProvider) GetPentesterHandler(ctx context.Context, taskID, subtask
 			},
 		}
 
-		ctx, observation := obs.Observer.NewObservation(ctx)
+		pentesterCtx, observation := obs.Observer.NewObservation(ctx)
 		pentesterSpan := observation.Span(
 			langfuse.WithStartSpanName("pentester agent"),
 			langfuse.WithStartSpanInput(action.Question),
@@ -700,22 +841,63 @@ func (fp *flowProvider) GetPentesterHandler(ctx context.Context, taskID, subtask
 				"system_context": pentesterContext["system"],
 			}),
 		)
-		ctx, _ = pentesterSpan.Observation(ctx)
+		pentesterCtx, _ = pentesterSpan.Observation(pentesterCtx)
 
+		// === PENTESTER USER PROMPT ===
 		userPentesterTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeQuestionPentester, pentesterContext["user"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, pentesterSpan, "failed to get user pentester template", err)
+			return "", wrapErrorEndSpan(pentesterCtx, pentesterSpan, "failed to get user pentester template", err)
 		}
 
+		// LOG PENTESTER USER PROMPT
+		logrus.WithContext(pentesterCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-pentester-handler",
+			"action":    "pentester_user_prompt",
+			"flow":      1,
+			"prompt":    userPentesterTmpl,
+			"params":    pentesterContext["user"],
+			"prompt_type": templates.PromptTypeQuestionPentester,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Pentester User Template Rendered ===")
+
+		// === PENTESTER SYSTEM PROMPT ===
 		systemPentesterTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypePentester, pentesterContext["system"])
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, pentesterSpan, "failed to get system pentester template", err)
+			return "", wrapErrorEndSpan(pentesterCtx, pentesterSpan, "failed to get system pentester template", err)
 		}
 
-		pentesterResult, err := fp.performPentester(ctx, taskID, subtaskID, systemPentesterTmpl, userPentesterTmpl, action.Question)
+		// LOG PENTESTER SYSTEM PROMPT
+		logrus.WithContext(pentesterCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-pentester-handler",
+			"action":    "pentester_system_prompt",
+			"flow":      1,
+			"prompt":    systemPentesterTmpl,
+			"params":    pentesterContext["system"],
+			"prompt_type": templates.PromptTypePentester,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT GENERATION: Pentester System Template Rendered ===")
+
+		pentesterResult, err := fp.performPentester(pentesterCtx, taskID, subtaskID, systemPentesterTmpl, userPentesterTmpl, action.Question)
 		if err != nil {
-			return "", wrapErrorEndSpan(ctx, pentesterSpan, "failed to get pentester result", err)
+			return "", wrapErrorEndSpan(pentesterCtx, pentesterSpan, "failed to get pentester result", err)
 		}
+
+		// LOG PENTESTER RESPONSE
+		logrus.WithContext(pentesterCtx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-pentester-handler",
+			"action":    "pentester_response",
+			"flow":      1,
+			"response":  pentesterResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT RESPONSE: Pentester Response Received ===")
 
 		pentesterSpan.End(
 			langfuse.WithEndSpanStatus("success"),
@@ -734,6 +916,19 @@ func (fp *flowProvider) GetPentesterHandler(ctx context.Context, taskID, subtask
 			logrus.WithContext(ctx).WithError(err).Error("failed to unmarshal pentester payload")
 			return "", fmt.Errorf("failed to unmarshal pentester payload: %w", err)
 		}
+
+		// LOG PENTESTER HANDLER START
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-pentester-handler",
+			"action":    "pentester_handler_start",
+			"flow":      1,
+			"tool_name": name,
+			"pentester_action": action,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Pentester Handler Started ===")
 
 		ctx, observation := obs.Observer.NewObservation(ctx)
 		handlerSpan := observation.Span(
@@ -757,6 +952,19 @@ func (fp *flowProvider) GetPentesterHandler(ctx context.Context, taskID, subtask
 			)
 			return "", err
 		}
+
+		// LOG PENTESTER HANDLER COMPLETE
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-pentester-handler",
+			"action":    "pentester_handler_complete",
+			"flow":      1,
+			"tool_name": name,
+			"final_result": pentesterResult,
+			"question":  action.Question,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Pentester Handler Complete ===")
 
 		handlerSpan.End(
 			langfuse.WithEndSpanStatus("success"),
