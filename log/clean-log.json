@@ -1,0 +1,229 @@
+[
+    {
+        "component": "pentagi-gql",
+        "level": "info",
+        "msg": "graphql websocket upgrade",
+        "time": "2025-07-23T08:11:18Z",
+        "uid": 1
+    },
+    {
+        "flow_id": 1,
+        "level": "info",
+        "msg": "flow created in DB",
+        "provider": "custom",
+        "time": "2025-07-23T08:11:27Z",
+        "user_id": 1
+    },
+    {
+        "flow_id": 1,
+        "host_dir": "",
+        "image": "vxcontrol/kali-linux",
+        "level": "info",
+        "msg": "spawning container",
+        "name": "pentagi-terminal-1",
+        "time": "2025-07-23T08:11:58Z",
+        "type": "primary",
+        "work_dir": "/opt/pentagi/data/flow-1"
+    },
+    {
+        "image": "vxcontrol/kali-linux",
+        "level": "info",
+        "msg": "pulling image...",
+        "time": "2025-07-23T08:11:58Z"
+    },
+    {
+        "flow_id": 1,
+        "host_dir": "",
+        "image": "vxcontrol/kali-linux",
+        "level": "info",
+        "msg": "creating container",
+        "name": "pentagi-terminal-1",
+        "time": "2025-07-23T08:15:56Z",
+        "type": "primary",
+        "work_dir": "/opt/pentagi/data/flow-1"
+    },
+    {
+        "flow_id": 1,
+        "host_dir": "",
+        "image": "vxcontrol/kali-linux",
+        "level": "info",
+        "local_id": "a1b867c544a0f626aa25dde1c4ebc650eb64d785be28bb5ee4d2006969460dd3",
+        "msg": "container created",
+        "name": "pentagi-terminal-1",
+        "time": "2025-07-23T08:15:57Z",
+        "type": "primary",
+        "work_dir": "/opt/pentagi/data/flow-1"
+    },
+    {
+        "flow_id": 1,
+        "host_dir": "",
+        "image": "vxcontrol/kali-linux",
+        "level": "info",
+        "local_id": "a1b867c544a0f626aa25dde1c4ebc650eb64d785be28bb5ee4d2006969460dd3",
+        "msg": "container started",
+        "name": "pentagi-terminal-1",
+        "time": "2025-07-23T08:15:58Z",
+        "type": "primary",
+        "work_dir": "/opt/pentagi/data/flow-1"
+    },
+    {
+        "action": "new_task_worker",
+        "component": "pentagi-automation-planning",
+        "flow_id": 1,
+        "input_length": 46,
+        "level": "info",
+        "msg": "=== AUTOMATION PLANNING: Creating task worker ===",
+        "time": "2025-07-23T08:15:58Z"
+    },
+    {
+        "action": "new_task_worker",
+        "component": "pentagi-automation-planning",
+        "flow_id": 1,
+        "input_length": 46,
+        "level": "info",
+        "msg": "=== AUTOMATION PLANNING: Task created ===",
+        "task_id": 1,
+        "task_input": "asses https://localhost:8443 for vulnerability",
+        "task_title": "Assess HTTPS Localhost Port 8443 Vulnerabilities",
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "generate_subtasks",
+        "component": "pentagi-automation-planning",
+        "flow_id": 1,
+        "level": "info",
+        "msg": "=== AUTOMATION PLANNING: Generating subtasks ===",
+        "task_id": 1,
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "perform_agent_chain",
+        "agent": "custom",
+        "agent_type": "generator",
+        "component": "pentagi-tools-calling",
+        "flow_id": 1,
+        "level": "info",
+        "msg": "=== TOOLS CALLING: Starting agent chain execution ===",
+        "msg_chain_id": 1,
+        "subtask_id": null,
+        "task_id": 1,
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "perform_agent_chain",
+        "agent": "custom",
+        "agent_type": "generator",
+        "available_tools": 6,
+        "chain_length": 2,
+        "component": "pentagi-tools-calling",
+        "flow_id": 1,
+        "iteration": "chain_loop",
+        "level": "info",
+        "msg": "=== TOOLS CALLING: Agent chain iteration ===",
+        "msg_chain_id": 1,
+        "subtask_id": null,
+        "task_id": 1,
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "call_with_retries",
+        "agent_type": "generator",
+        "chain_length": 2,
+        "component": "pentagi-tools-calling",
+        "level": "info",
+        "max_retries": 3,
+        "msg": "=== TOOLS CALLING: LLM call with retries ===",
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "call_with_retries",
+        "agent_type": "generator",
+        "attempt": 1,
+        "chain_length": 2,
+        "component": "pentagi-tools-calling",
+        "level": "info",
+        "max_retries": 3,
+        "msg": "=== TOOLS CALLING: LLM call attempt ===",
+        "stream_id": 0,
+        "time": "2025-07-23T08:16:09Z"
+    },
+    {
+        "action": "call_with_retries",
+        "agent_type": "generator",
+        "attempts": 1,
+        "chain_length": 2,
+        "choices_count": 1,
+        "component": "pentagi-tools-calling",
+        "content_length": 0,
+        "level": "info",
+        "max_retries": 3,
+        "msg": "=== TOOLS CALLING: LLM call successful ===",
+        "thinking_length": 0,
+        "time": "2025-07-23T08:16:40Z",
+        "tool_calls": 0
+    },
+    {
+        "action": "perform_agent_chain",
+        "agent": "custom",
+        "agent_type": "generator",
+        "component": "pentagi-tools-calling",
+        "flow_id": 1,
+        "func_calls_count": 1,
+        "has_content": false,
+        "has_thinking": true,
+        "level": "info",
+        "msg": "=== TOOLS CALLING: LLM response received ===",
+        "msg_chain_id": 1,
+        "stream_id": 0,
+        "subtask_id": null,
+        "task_id": 1,
+        "time": "2025-07-23T08:16:40Z"
+    },
+    {
+        "action": "exec_tool_call",
+        "agent": "custom",
+        "args_size": 2033,
+        "component": "pentagi-tools-calling",
+        "flow_id": 1,
+        "func_name": "subtask_list",
+        "level": "info",
+        "msg": "=== TOOLS CALLING: Executing tool call ===",
+        "msg_chain_id": 1,
+        "time": "2025-07-23T08:16:40Z",
+        "tool_call_id": "chatcmpl-tool-585b32bbac1040dcbe0ebddd128c4937",
+        "tool_call_idx": 0
+    },
+    {
+        "action": "exec_tool_call",
+        "agent": "custom",
+        "args_size": 2033,
+        "component": "pentagi-tools-calling",
+        "flow_id": 1,
+        "func_name": "subtask_list",
+        "level": "info",
+        "msg": "=== TOOLS CALLING: Tool arguments ===",
+        "msg_chain_id": 1,
+        "time": "2025-07-23T08:16:40Z",
+        "tool_args": "{\"subtasks\": \"Verify Target Accessibility\",\n        \"description\": \"Use curl or ping to confirm the target URL (https://localhost:8443) is reachable and responsive. This ensures the assessment can proceed.\"\n      },\n      {\n        \"title\": \"Scan Open Ports and Services\",\n        \"description\": \"Use nmap to identify open ports and running services on the target host. This provides context for potential attack vectors.\"\n      },\n      {\n        \"title\": \"Analyze SSL/TLS Vulnerabilities\",\n        ",
+        "tool_call_id": "chatcmpl-tool-585b32bbac1040dcbe0ebddd128c4937",
+        "tool_call_idx": 0
+    },
+    {
+        "level": "info",
+        "msg": "2025/07/23 08:16:41 goose: no migrations to run. current version: 20250420",
+        "time": "2025-07-23T08:16:41Z"
+    },
+    {
+        "level": "info",
+        "msg": "2025/07/23 08:16:41 Migrations ran successfully",
+        "time": "2025-07-23T08:16:41Z"
+    },
+    {
+        "flow_id": 1,
+        "level": "info",
+        "msg": "flow loaded from DB",
+        "provider": "custom",
+        "time": "2025-07-23T08:16:44Z",
+        "user_id": 1
+    }
+]
