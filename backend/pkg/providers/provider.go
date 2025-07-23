@@ -175,6 +175,7 @@ func (fp *flowProvider) GetTaskTitle(ctx context.Context, input string) (string,
 	)
 	ctx, _ = getterSpan.Observation(ctx)
 
+	// === TASK DESCRIPTOR PROMPT ===
 	titleTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeTaskDescriptor, map[string]any{
 		"Input":       input,
 		"Lang":        fp.language,
@@ -185,10 +186,36 @@ func (fp *flowProvider) GetTaskTitle(ctx context.Context, input string) (string,
 		return "", wrapErrorEndSpan(ctx, getterSpan, "failed to get flow title template", err)
 	}
 
+	// LOG TASK DESCRIPTOR PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-creation",
+		"action":    "task_descriptor_prompt",
+		"flow":      1,
+		"prompt":    titleTmpl,
+		"params": map[string]any{
+			"Input":       input,
+			"Lang":        fp.language,
+			"CurrentTime": getCurrentTime(),
+			"N":           150,
+		},
+		"prompt_type": templates.PromptTypeTaskDescriptor,
+	}).Info("=== PROMPT GENERATION: Task Descriptor Template Rendered ===")
+
 	title, err := fp.Call(ctx, provider.OptionsTypeSimple, titleTmpl)
 	if err != nil {
 		return "", wrapErrorEndSpan(ctx, getterSpan, "failed to get flow title", err)
 	}
+
+	// LOG TASK DESCRIPTOR RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-creation",
+		"action":    "task_descriptor_response",
+		"flow":      1,
+		"response":  title,
+		"prompt_type": templates.PromptTypeTaskDescriptor,
+	}).Info("=== PROMPT RESPONSE: Task Descriptor Response Received ===")
 
 	getterSpan.End(
 		langfuse.WithEndSpanStatus("success"),
@@ -216,6 +243,7 @@ func (fp *flowProvider) GenerateSubtasks(ctx context.Context, taskID int64) ([]t
 		return nil, fmt.Errorf("failed to get tasks info: %w", err)
 	}
 
+	// === SUBTASKS GENERATOR CONTEXT PREPARATION ===
 	generatorContext := map[string]map[string]any{
 		"user": {
 			"Task":     tasksInfo.Task,
@@ -249,11 +277,25 @@ func (fp *flowProvider) GenerateSubtasks(ctx context.Context, taskID int64) ([]t
 	)
 	ctx, _ = generatorSpan.Observation(ctx)
 
+	// === SUBTASKS GENERATOR USER PROMPT ===
 	generatorTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeSubtasksGenerator, generatorContext["user"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, generatorSpan, "failed to get task generator template", err)
 	}
 
+	// LOG SUBTASKS GENERATOR USER PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generation",
+		"action":    "subtasks_generator_user_prompt",
+		"flow":      1,
+		"prompt":    generatorTmpl,
+		"params":    generatorContext["user"],
+		"prompt_type": templates.PromptTypeSubtasksGenerator,
+		"task_id":   taskID,
+	}).Info("=== PROMPT GENERATION: Subtasks Generator User Template Rendered ===")
+
+	// Handle template size limiting logic...
 	subtasksLen := len(tasksInfo.Subtasks)
 	for l := subtasksLen; l > 2; l /= 2 {
 		if len(generatorTmpl) < msgGeneratorSizeLimit {
@@ -265,33 +307,59 @@ func (fp *flowProvider) GenerateSubtasks(ctx context.Context, taskID int64) ([]t
 		if err != nil {
 			return nil, wrapErrorEndSpan(ctx, generatorSpan, "failed to get task generator template", err)
 		}
+
+		// LOG SUBTASKS GENERATOR USER PROMPT (TRUNCATED)
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-subtasks-generation",
+			"action":    "subtasks_generator_user_prompt_truncated",
+			"flow":      1,
+			"prompt":    generatorTmpl,
+			"params":    generatorContext["user"],
+			"prompt_type": templates.PromptTypeSubtasksGenerator,
+			"truncated_level": l,
+			"task_id":   taskID,
+		}).Info("=== PROMPT GENERATION: Subtasks Generator User Template Truncated ===")
 	}
 
+	// === SUBTASKS GENERATOR SYSTEM PROMPT ===
 	systemGeneratorTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeGenerator, generatorContext["system"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, generatorSpan, "failed to get task system generator template", err)
 	}
+
+	// LOG SUBTASKS GENERATOR SYSTEM PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generation",
+		"action":    "subtasks_generator_system_prompt",
+		"flow":      1,
+		"prompt":    systemGeneratorTmpl,
+		"params":    generatorContext["system"],
+		"prompt_type": templates.PromptTypeGenerator,
+		"task_id":   taskID,
+	}).Info("=== PROMPT GENERATION: Subtasks Generator System Template Rendered ===")
 
 	subtasks, err := fp.performSubtasksGenerator(ctx, taskID, systemGeneratorTmpl, generatorTmpl, tasksInfo.Task.Input)
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, generatorSpan, "failed to perform subtasks generator", err)
 	}
 
+	// LOG SUBTASKS GENERATOR RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generation",
+		"action":    "subtasks_generator_response",
+		"flow":      1,
+		"response":  subtasks,
+		"subtasks_count": len(subtasks),
+		"task_id":   taskID,
+	}).Info("=== PROMPT RESPONSE: Subtasks Generator Response Received ===")
+
 	generatorSpan.End(
 		langfuse.WithEndSpanStatus("success"),
 		langfuse.WithEndSpanOutput(subtasks),
 	)
-
-	logger.WithFields(logrus.Fields{
-		"subtasks_count": len(subtasks),
-		"subtask_titles": func() []string {
-			titles := make([]string, len(subtasks))
-			for i, st := range subtasks {
-				titles[i] = st.Title
-			}
-			return titles
-		}(),
-	}).Info("=== AUTOMATION PLANNING: Subtasks generated ===")
 
 	return subtasks, nil
 }
@@ -395,11 +463,18 @@ func (fp *flowProvider) RefineSubtasks(ctx context.Context, taskID int64) ([]too
 	return subtasks, nil
 }
 
+
 func (fp *flowProvider) GetTaskResult(ctx context.Context, taskID int64) (*tools.TaskResult, error) {
 	ctx, span := obs.Observer.NewSpan(ctx, obs.SpanKindInternal, "providers.flowProvider.GetTaskResult")
 	defer span.End()
 
-	logger := logrus.WithContext(ctx).WithField("task_id", taskID)
+	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"component": "pentagi-task-result",
+		"action":    "get_task_result",
+		"flow_id":   fp.flowID,
+		"task_id":   taskID,
+	})
+	logger.Info("=== TASK RESULT: Getting task result ===")
 
 	tasksInfo, err := fp.getTasksInfo(ctx, taskID)
 	if err != nil {
@@ -407,28 +482,23 @@ func (fp *flowProvider) GetTaskResult(ctx context.Context, taskID int64) (*tools
 		return nil, fmt.Errorf("failed to get tasks info: %w", err)
 	}
 
-	subtasksInfo := fp.getSubtasksInfo(taskID, tasksInfo.Subtasks)
+	// === TASK REPORTER CONTEXT PREPARATION ===
 	reporterContext := map[string]map[string]any{
 		"user": {
-			"Task":              tasksInfo.Task,
-			"Tasks":             tasksInfo.Tasks,
-			"CompletedSubtasks": subtasksInfo.Completed,
-			"PlannedSubtasks":   subtasksInfo.Planned,
+			"Task":     tasksInfo.Task,
+			"Tasks":    tasksInfo.Tasks,
+			"Subtasks": tasksInfo.Subtasks,
 		},
 		"system": {
-			"ReportResultToolName":    tools.ReportResultToolName,
-			"SummarizationToolName":   cast.SummarizationToolName,
-			"SummarizedContentPrefix": strings.ReplaceAll(csum.SummarizedContentPrefix, "\n", "\\n"),
-			"Lang":                    fp.language,
-			"N":                       4000,
-			"ToolPlaceholder":         ToolPlaceholder,
+			"ExecutionContext": "",
+			"CurrentTime":      getCurrentTime(),
 		},
 	}
 
 	ctx, observation := obs.Observer.NewObservation(ctx)
 	reporterSpan := observation.Span(
 		langfuse.WithStartSpanName("reporter agent"),
-		langfuse.WithStartSpanInput(reporterContext),
+		langfuse.WithStartSpanInput(tasksInfo.Task.Input),
 		langfuse.WithStartSpanMetadata(langfuse.Metadata{
 			"user_context":   reporterContext["user"],
 			"system_context": reporterContext["system"],
@@ -436,23 +506,51 @@ func (fp *flowProvider) GetTaskResult(ctx context.Context, taskID int64) (*tools
 	)
 	ctx, _ = reporterSpan.Observation(ctx)
 
+	// === TASK REPORTER USER PROMPT ===
 	reporterTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeTaskReporter, reporterContext["user"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to get task reporter template", err)
 	}
 
-	if len(reporterTmpl) < msgReporterSizeLimit {
+	// LOG TASK REPORTER USER PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-generation",
+		"action":    "task_reporter_user_prompt",
+		"flow":      1,
+		"prompt":    reporterTmpl,
+		"params":    reporterContext["user"],
+		"prompt_type": templates.PromptTypeTaskReporter,
+		"task_id":   taskID,
+	}).Info("=== PROMPT GENERATION: Task Reporter User Template Rendered ===")
+
+	// Handle execution context and logs logic...
+	reporterTmplLen := len(reporterTmpl)
+	if reporterTmplLen < msgReporterSizeLimit {
 		summarizerHandler := fp.GetSummarizeResultHandler(&taskID, nil)
 		executionState, err := fp.getTaskPrimaryAgentChainSummary(ctx, taskID, summarizerHandler)
 		if err != nil {
 			return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to prepare execution state", err)
 		}
 
-		reporterContext["user"]["ExecutionState"] = executionState
+		reporterContext["system"]["ExecutionContext"] = executionState
 		reporterTmpl, err = fp.prompter.RenderTemplate(templates.PromptTypeTaskReporter, reporterContext["user"])
 		if err != nil {
 			return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to get task reporter template", err)
 		}
+
+		// LOG TASK REPORTER USER PROMPT WITH EXECUTION STATE
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-task-result-generation",
+			"action":    "task_reporter_user_prompt_with_execution",
+			"flow":      1,
+			"prompt":    reporterTmpl,
+			"params":    reporterContext["user"],
+			"prompt_type": templates.PromptTypeTaskReporter,
+			"task_id":   taskID,
+			"execution_state_preview": executionState[:min(500, len(executionState))],
+		}).Info("=== PROMPT GENERATION: Task Reporter User Template With Execution State ===")
 
 		if len(reporterTmpl) < msgReporterSizeLimit {
 			msgLogsSummary, err := fp.getTaskMsgLogsSummary(ctx, taskID, summarizerHandler)
@@ -461,18 +559,58 @@ func (fp *flowProvider) GetTaskResult(ctx context.Context, taskID int64) (*tools
 			}
 
 			reporterContext["user"]["ExecutionLogs"] = msgLogsSummary
+			reporterTmpl, err = fp.prompter.RenderTemplate(templates.PromptTypeTaskReporter, reporterContext["user"])
+			if err != nil {
+				return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to get task reporter template", err)
+			}
+
+			// LOG TASK REPORTER USER PROMPT WITH EXECUTION LOGS
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-task-result-generation",
+				"action":    "task_reporter_user_prompt_with_logs",
+				"flow":      1,
+				"prompt":    reporterTmpl,
+				"params":    reporterContext["user"],
+				"prompt_type": templates.PromptTypeTaskReporter,
+				"task_id":   taskID,
+				"execution_logs_preview": msgLogsSummary[:min(500, len(msgLogsSummary))],
+			}).Info("=== PROMPT GENERATION: Task Reporter User Template With Execution Logs ===")
 		}
 	}
 
+	// === TASK REPORTER SYSTEM PROMPT ===
 	systemReporterTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeReporter, reporterContext["system"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to get task system reporter template", err)
 	}
 
+	// LOG TASK REPORTER SYSTEM PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-generation",
+		"action":    "task_reporter_system_prompt",
+		"flow":      1,
+		"prompt":    systemReporterTmpl,
+		"params":    reporterContext["system"],
+		"prompt_type": templates.PromptTypeReporter,
+		"task_id":   taskID,
+	}).Info("=== PROMPT GENERATION: Task Reporter System Template Rendered ===")
+
 	result, err := fp.performTaskResultReporter(ctx, &taskID, nil, systemReporterTmpl, reporterTmpl, tasksInfo.Task.Input)
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, reporterSpan, "failed to perform task result reporter", err)
 	}
+
+	// LOG TASK REPORTER RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-generation",
+		"action":    "task_reporter_response",
+		"flow":      1,
+		"response":  result,
+		"task_id":   taskID,
+	}).Info("=== PROMPT RESPONSE: Task Reporter Response Received ===")
 
 	reporterSpan.End(
 		langfuse.WithEndSpanStatus("success"),
@@ -495,7 +633,6 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 	})
 	logger.Info("=== AUTOMATION PLANNING: Preparing agent chain ===")
 
-
 	subtask, err := fp.db.GetSubtask(ctx, subtaskID)
 	if err != nil {
 		logger.WithError(err).Error("failed to get subtask")
@@ -517,7 +654,8 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 		return 0, fmt.Errorf("failed to update subtask context: %w", err)
 	}
 
-	systemAgentTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypePrimaryAgent, map[string]any{
+	// === PRIMARY AGENT SYSTEM PROMPT ===
+	primaryAgentParams := map[string]any{
 		"FinalyToolName":          tools.FinalyToolName,
 		"SearchToolName":          tools.SearchToolName,
 		"PentesterToolName":       tools.PentesterToolName,
@@ -532,11 +670,27 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 		"DockerImage":             fp.image,
 		"CurrentTime":             getCurrentTime(),
 		"ToolPlaceholder":         ToolPlaceholder,
-	})
+	}
+
+	systemAgentTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypePrimaryAgent, primaryAgentParams)
 	if err != nil {
 		logger.WithError(err).Error("failed to get system prompt for primary agent template")
 		return 0, fmt.Errorf("failed to get system prompt for primary agent template: %w", err)
 	}
+
+	// LOG PRIMARY AGENT SYSTEM PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-agent-chain-preparation",
+		"action":    "primary_agent_system_prompt",
+		"flow":      1,
+		"prompt":    systemAgentTmpl,
+		"params":    primaryAgentParams,
+		"prompt_type": templates.PromptTypePrimaryAgent,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+		"execution_context_preview": executionContext[:min(500, len(executionContext))],
+	}).Info("=== PROMPT GENERATION: Primary Agent System Template Rendered ===")
 
 	optAgentType := provider.OptionsTypeAgent
 	msgChainType := database.MsgchainTypePrimaryAgent
@@ -547,6 +701,19 @@ func (fp *flowProvider) PrepareAgentChain(ctx context.Context, taskID, subtaskID
 		logger.WithError(err).Error("failed to restore primary agent msg chain")
 		return 0, fmt.Errorf("failed to restore primary agent msg chain: %w", err)
 	}
+
+	// LOG PRIMARY AGENT USER PROMPT (subtask description)
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-agent-chain-preparation",
+		"action":    "primary_agent_user_prompt",
+		"flow":      1,
+		"prompt":    subtask.Description,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+		"subtask_title": subtask.Title,
+		"msg_chain_id": msgChainID,
+	}).Info("=== PROMPT GENERATION: Primary Agent User Prompt (Subtask Description) ===")
 
 	logger.WithFields(logrus.Fields{
 		"subtask_title":       subtask.Title,

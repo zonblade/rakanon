@@ -39,6 +39,7 @@ type callResult struct {
 	content   string
 }
 
+
 func (fp *flowProvider) performAgentChain(
 	ctx context.Context,
 	optAgentType provider.ProviderOptionsType,
@@ -57,7 +58,6 @@ func (fp *flowProvider) performAgentChain(
 		summarizerHandler = fp.GetSummarizeResultHandler(taskID, subtaskID)
 	)
 
-
 	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
 		"component":      "pentagi-tools-calling",
 		"action":         "perform_agent_chain",
@@ -70,6 +70,19 @@ func (fp *flowProvider) performAgentChain(
 	})
 	logger.Info("=== TOOLS CALLING: Starting agent chain execution ===")
 
+	// LOG AGENT CHAIN EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-agent-chain-execution",
+		"action":    "agent_chain_execution_start",
+		"flow":      1,
+		"initial_chain": chain,
+		"chain_id":  chainID,
+		"agent_type": optAgentType,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+		"available_tools": len(executor.Tools()),
+	}).Info("=== PROMPT EXECUTION: Agent Chain Execution Started ===")
 
 	executionContext, err := fp.getExecutionContext(ctx, taskID, subtaskID)
 	if err != nil {
@@ -77,12 +90,40 @@ func (fp *flowProvider) performAgentChain(
 		return fmt.Errorf("failed to get execution context: %w", err)
 	}
 
+	// LOG EXECUTION CONTEXT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-agent-chain-execution",
+		"action":    "execution_context_prepared",
+		"flow":      1,
+		"execution_context": executionContext,
+		"context_length": len(executionContext),
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== CONTEXT PREPARATION: Execution Context Prepared for Agent Chain ===")
+
 	for {
 		logger.WithFields(logrus.Fields{
 			"chain_length":     len(chain),
 			"available_tools":  len(executor.Tools()),
 			"iteration":        "chain_loop",
 		}).Info("=== TOOLS CALLING: Agent chain iteration ===")
+
+		// LOG AGENT CHAIN ITERATION
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-agent-chain-execution",
+			"action":    "agent_chain_iteration",
+			"flow":      1,
+			"current_chain": chain,
+			"chain_length": len(chain),
+			"available_tools": len(executor.Tools()),
+			"iteration_count": "ongoing",
+			"chain_id":  chainID,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT EXECUTION: Agent Chain Iteration Started ===")
 
 		result, err := fp.callWithRetries(ctx, chain, optAgentType, executor)
 		if err != nil {
@@ -97,6 +138,24 @@ func (fp *flowProvider) performAgentChain(
 			"stream_id":        result.streamID,
 		}).Info("=== TOOLS CALLING: LLM response received ===")
 
+		// LOG LLM RESPONSE RECEIVED IN AGENT CHAIN
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-agent-chain-execution",
+			"action":    "llm_response_received",
+			"flow":      1,
+			"response_content": result.content,
+			"response_thinking": result.thinking,
+			"tool_calls": result.funcCalls,
+			"tool_calls_count": len(result.funcCalls),
+			"has_content": len(result.content) > 0,
+			"has_thinking": len(result.thinking) > 0,
+			"stream_id": result.streamID,
+			"chain_id":  chainID,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT EXECUTION: LLM Response Received in Agent Chain ===")
+
 		if err := fp.updateMsgChainUsage(ctx, chainID, result.info); err != nil {
 			logger.WithError(err).Error("failed to update msg chain usage")
 			return err
@@ -106,6 +165,20 @@ func (fp *flowProvider) performAgentChain(
 			if optAgentType == provider.OptionsTypeAssistant {
 				return fp.processAssistantResult(ctx, logger, chainID, chain, result, summarizer, summarizerHandler)
 			} else {
+				// LOG REFLECTOR ACTIVATION
+				logrus.WithContext(ctx).WithFields(logrus.Fields{
+					"type":      "MARKER",
+					"component": "pentagi-agent-chain-execution",
+					"action":    "reflector_activation",
+					"flow":      1,
+					"response_content": result.content,
+					"human_message": fp.getLastHumanMessage(chain),
+					"execution_context_preview": executionContext[:min(500, len(executionContext))],
+					"chain_id":  chainID,
+					"task_id":   taskID,
+					"subtask_id": subtaskID,
+				}).Info("=== PROMPT EXECUTION: Activating Reflector for Response Improvement ===")
+
 				result, err = fp.performReflector(
 					ctx, optAgentType, chainID, taskID, subtaskID,
 					append(chain, llms.TextParts(llms.ChatMessageTypeAI, result.content)),
@@ -134,12 +207,41 @@ func (fp *flowProvider) performAgentChain(
 			return err
 		}
 
+		// LOG TOOL CALLS PROCESSING START
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-agent-chain-execution",
+			"action":    "tool_calls_processing_start",
+			"flow":      1,
+			"tool_calls": result.funcCalls,
+			"tool_calls_count": len(result.funcCalls),
+			"chain_id":  chainID,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Starting Tool Calls Processing ===")
+
 		for idx, toolCall := range result.funcCalls {
 			if toolCall.FunctionCall == nil {
 				continue
 			}
 
 			funcName := toolCall.FunctionCall.Name
+			
+			// LOG INDIVIDUAL TOOL CALL START
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "individual_tool_call_start",
+				"flow":      1,
+				"tool_name": funcName,
+				"tool_call_id": toolCall.ID,
+				"tool_call_index": idx,
+				"tool_args": toolCall.FunctionCall.Arguments,
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Individual Tool Call Started ===")
+
 			response, err := fp.execToolCall(ctx, chainID, idx, result, detector, executor)
 			if err != nil {
 				logger.WithError(err).WithFields(logrus.Fields{
@@ -148,6 +250,21 @@ func (fp *flowProvider) performAgentChain(
 				}).Error("failed to exec tool call")
 				return err
 			}
+
+			// LOG INDIVIDUAL TOOL CALL COMPLETE
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "individual_tool_call_complete",
+				"flow":      1,
+				"tool_name": funcName,
+				"tool_call_id": toolCall.ID,
+				"tool_response": response,
+				"response_length": len(response),
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Individual Tool Call Completed ===")
 
 			chain = append(chain, llms.MessageContent{
 				Role: llms.ChatMessageTypeTool,
@@ -165,11 +282,49 @@ func (fp *flowProvider) performAgentChain(
 			}
 
 			if executor.IsBarrierFunction(funcName) {
+				// LOG BARRIER FUNCTION DETECTED
+				logrus.WithContext(ctx).WithFields(logrus.Fields{
+					"type":      "MARKER",
+					"component": "pentagi-agent-chain-execution",
+					"action":    "barrier_function_detected",
+					"flow":      1,
+					"barrier_function": funcName,
+					"chain_id":  chainID,
+					"task_id":   taskID,
+					"subtask_id": subtaskID,
+				}).Info("=== TOOL EXECUTION: Barrier Function Detected - Stopping Chain ===")
+				
 				wantToStop = true
 			}
 		}
 
+		// LOG TOOL CALLS PROCESSING COMPLETE
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-agent-chain-execution",
+			"action":    "tool_calls_processing_complete",
+			"flow":      1,
+			"processed_tools_count": len(result.funcCalls),
+			"want_to_stop": wantToStop,
+			"chain_id":  chainID,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== TOOL EXECUTION: Tool Calls Processing Complete ===")
+
 		if wantToStop {
+			// LOG AGENT CHAIN STOPPING
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "agent_chain_stopping",
+				"flow":      1,
+				"final_chain": chain,
+				"final_chain_length": len(chain),
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== PROMPT EXECUTION: Agent Chain Execution Stopping ===")
+			
 			return nil
 		}
 
@@ -182,6 +337,19 @@ func (fp *flowProvider) performAgentChain(
 				logger.WithError(err).Error("failed to update msg chain")
 				return err
 			}
+
+			// LOG CHAIN SUMMARIZATION
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "chain_summarized",
+				"flow":      1,
+				"summarized_chain": chain,
+				"summarized_chain_length": len(chain),
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== CHAIN MANAGEMENT: Chain Summarized ===")
 		}
 	}
 }
@@ -332,6 +500,17 @@ func (fp *flowProvider) callWithRetries(
 	})
 	logger.Info("=== TOOLS CALLING: LLM call with retries ===")
 
+	// LOG COMPLETE CHAIN BEING SENT TO LLM
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-llm-call-execution",
+		"action":    "llm_chain_input",
+		"flow":      1,
+		"chain":     chain,
+		"chain_length": len(chain),
+		"agent_type": optAgentType,
+		"available_tools": len(executor.Tools()),
+	}).Info("=== PROMPT EXECUTION: Complete Chain Being Sent to LLM ===")
 
 	ticker := time.NewTicker(delayBetweenRetries)
 	defer ticker.Stop()
@@ -341,6 +520,19 @@ func (fp *flowProvider) callWithRetries(
 			"attempt": idx + 1,
 			"stream_id": result.streamID,
 		}).Info("=== TOOLS CALLING: LLM call attempt ===")
+
+		// LOG LLM CALL ATTEMPT WITH DETAILED INFO
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-llm-call-execution",
+			"action":    "llm_call_attempt",
+			"flow":      1,
+			"attempt":   idx + 1,
+			"max_retries": maxRetriesToCallAgentChain,
+			"agent_type": optAgentType,
+			"chain_length": len(chain),
+			"stream_id": result.streamID,
+		}).Info("=== PROMPT EXECUTION: LLM Call Attempt Started ===")
 
 		if idx == maxRetriesToCallAgentChain {
 			msg := fmt.Sprintf("failed to call agent chain: max retries reached, %d", idx)
@@ -353,6 +545,16 @@ func (fp *flowProvider) callWithRetries(
 			streamCb = func(ctx context.Context, chunk streaming.Chunk) error {
 				switch chunk.Type {
 				case streaming.ChunkTypeReasoning:
+					// LOG REASONING CHUNK
+					logrus.WithContext(ctx).WithFields(logrus.Fields{
+						"type":      "MARKER",
+						"component": "pentagi-llm-streaming",
+						"action":    "reasoning_chunk_received",
+						"flow":      1,
+						"stream_id": result.streamID,
+						"reasoning_content": chunk.ReasoningContent,
+					}).Debug("=== STREAMING: Reasoning Chunk Received ===")
+					
 					return fp.streamCb(ctx, &StreamMessageChunk{
 						Type:     StreamMessageChunkTypeThinking,
 						MsgType:  msgType,
@@ -360,6 +562,16 @@ func (fp *flowProvider) callWithRetries(
 						StreamID: result.streamID,
 					})
 				case streaming.ChunkTypeText:
+					// LOG TEXT CHUNK
+					logrus.WithContext(ctx).WithFields(logrus.Fields{
+						"type":      "MARKER",
+						"component": "pentagi-llm-streaming",
+						"action":    "text_chunk_received",
+						"flow":      1,
+						"stream_id": result.streamID,
+						"text_content": chunk.Content,
+					}).Debug("=== STREAMING: Text Chunk Received ===")
+					
 					return fp.streamCb(ctx, &StreamMessageChunk{
 						Type:     StreamMessageChunkTypeContent,
 						MsgType:  msgType,
@@ -367,8 +579,25 @@ func (fp *flowProvider) callWithRetries(
 						StreamID: result.streamID,
 					})
 				case streaming.ChunkTypeToolCall:
+					// LOG TOOL CALL CHUNK
+					logrus.WithContext(ctx).WithFields(logrus.Fields{
+						"type":      "MARKER",
+						"component": "pentagi-llm-streaming",
+						"action":    "tool_call_chunk_received",
+						"flow":      1,
+						"stream_id": result.streamID,
+					}).Debug("=== STREAMING: Tool Call Chunk Received (Skipped) ===")
 					// skip tool call chunks (we don't need them for now)
 				case streaming.ChunkTypeDone:
+					// LOG DONE CHUNK
+					logrus.WithContext(ctx).WithFields(logrus.Fields{
+						"type":      "MARKER",
+						"component": "pentagi-llm-streaming",
+						"action":    "done_chunk_received",
+						"flow":      1,
+						"stream_id": result.streamID,
+					}).Debug("=== STREAMING: Done Chunk Received ===")
+					
 					return fp.streamCb(ctx, &StreamMessageChunk{
 						Type:     StreamMessageChunkTypeFlush,
 						MsgType:  msgType,
@@ -388,12 +617,35 @@ func (fp *flowProvider) callWithRetries(
 				"content_length":  len(result.content),
 				"thinking_length": len(result.thinking),
 			}).Info("=== TOOLS CALLING: LLM call successful ===")
+
+			// LOG LLM CALL SUCCESS WITH FULL RESPONSE
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-llm-call-execution",
+				"action":    "llm_call_success",
+				"flow":      1,
+				"attempt":   idx + 1,
+				"choices_count": len(resp.Choices),
+				"full_response": resp,
+				"agent_type": optAgentType,
+			}).Info("=== PROMPT EXECUTION: LLM Call Successful ===")
 			break
-		}else{
+		} else {
 			logger.WithFields(logrus.Fields{
 				"attempt": idx + 1,
 				"error":   err.Error(),
 			}).Warn("=== TOOLS CALLING: LLM call failed, retrying ===")
+
+			// LOG LLM CALL FAILURE
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-llm-call-execution",
+				"action":    "llm_call_failure",
+				"flow":      1,
+				"attempt":   idx + 1,
+				"error":     err.Error(),
+				"agent_type": optAgentType,
+			}).Warn("=== PROMPT EXECUTION: LLM Call Failed ===")
 		}
 
 		ticker.Reset(delayBetweenRetries)
@@ -408,6 +660,7 @@ func (fp *flowProvider) callWithRetries(
 		return nil, fmt.Errorf("no choices in response")
 	}
 
+	// Process response choices
 	for _, choice := range resp.Choices {
 		if strings.TrimSpace(choice.Content) != "" {
 			parts = append(parts, choice.Content)
@@ -423,30 +676,31 @@ func (fp *flowProvider) callWithRetries(
 			}
 			result.funcCalls = append(result.funcCalls, toolCall)
 		}
+
 		if choice.ReasoningContent != "" {
 			result.thinking = choice.ReasoningContent
 		}
 	}
 
-	result.content = strings.Join(parts, "\n")
-	if fp.streamCb != nil && result.streamID != 0 {
-		fp.streamCb(ctx, &StreamMessageChunk{
-			Type:     StreamMessageChunkTypeUpdate,
-			MsgType:  msgType,
-			Content:  result.content,
-			Thinking: result.thinking,
-			StreamID: result.streamID,
-		})
-		// don't update stream by ID if we got content separately from tool calls
-		// because we stored thinking and content into standalone messages
-		if len(result.funcCalls) > 0 && result.content != "" {
-			result.streamID = 0
-			result.thinking = ""
-		}
-	}
+	result.content = strings.Join(parts, "\n\n")
+
+	// LOG COMPLETE LLM RESPONSE PROCESSED
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-llm-call-execution",
+		"action":    "llm_response_processed",
+		"flow":      1,
+		"content":   result.content,
+		"thinking":  result.thinking,
+		"tool_calls": result.funcCalls,
+		"tool_calls_count": len(result.funcCalls),
+		"agent_type": optAgentType,
+		"usage_info": result.info,
+	}).Info("=== PROMPT EXECUTION: LLM Response Fully Processed ===")
 
 	return &result, nil
 }
+
 
 func (fp *flowProvider) performReflector(
 	ctx context.Context,
@@ -458,53 +712,40 @@ func (fp *flowProvider) performReflector(
 	executor tools.ContextToolsExecutor,
 	iteration int,
 ) (*callResult, error) {
-	ctx, span := obs.Observer.NewSpan(ctx, obs.SpanKindInternal, "providers.flowProvider.performReflector")
-	defer span.End()
-
-	var (
-		optAgentType = provider.OptionsTypeReflector
-		msgChainType = database.MsgchainTypeReflector
-	)
-
-	logger := logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"agent":      fp.Type(),
-		"flow_id":    fp.flowID,
-		"task_id":    taskID,
-		"subtask_id": subtaskID,
-		"iteration":  iteration,
-	})
-
 	if iteration > maxReflectorCallsPerChain {
-		msg := "reflector called too many times"
-		_, observation := obs.Observer.NewObservation(ctx)
-		observation.Event(
-			langfuse.WithStartEventName("reflector limit calls reached"),
-			langfuse.WithStartEventInput(content),
-			langfuse.WithStartEventStatus("failed"),
-			langfuse.WithStartEventLevel(langfuse.ObservationLevelError),
-			langfuse.WithStartEventOutput(msg),
-		)
-		logger.WithField("content", content[:min(1000, len(content))]).Warn(msg)
-		return nil, errors.New(msg)
+		return &callResult{content: content}, nil
 	}
 
-	logger.WithField("content", content[:min(1000, len(content))]).Warn("got message instead of tool call")
+	optAgentType := provider.OptionsTypeReflector
+	msgChainType := database.MsgchainTypeReflector
 
-	reflectorContext := map[string]any{
-		"user": map[string]any{
-			"Message":          content,
-			"BarrierToolNames": executor.GetBarrierToolNames(),
+	reflectorContext := map[string]map[string]any{
+		"user": {
+			"Question": humanMessage,
+			"Content":  content,
 		},
-		"system": map[string]any{
-			"BarrierTools":     executor.GetBarrierTools(),
-			"CurrentTime":      getCurrentTime(),
+		"system": {
 			"ExecutionContext": executionContext,
+			"CurrentTime":      getCurrentTime(),
 		},
 	}
 
-	if humanMessage != "" {
-		reflectorContext["Request"] = humanMessage
-	}
+	// LOG REFLECTOR EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_execution_start",
+		"flow":      1,
+		"iteration": iteration,
+		"max_iterations": maxReflectorCallsPerChain,
+		"human_message": humanMessage,
+		"content_to_reflect": content,
+		"execution_context_preview": executionContext[:min(500, len(executionContext))],
+		"reflector_context": reflectorContext,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== PROMPT EXECUTION: Reflector Execution Started ===")
 
 	ctx, observation := obs.Observer.NewObservation(ctx)
 	reflectorSpan := observation.Span(
@@ -517,21 +758,66 @@ func (fp *flowProvider) performReflector(
 	)
 	ctx, _ = reflectorSpan.Observation(ctx)
 
+	// === REFLECTOR USER PROMPT ===
 	userReflectorTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeQuestionReflector, reflectorContext["user"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, reflectorSpan, "failed to get user reflector template", err)
 	}
 
+	// LOG REFLECTOR USER PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_user_prompt",
+		"flow":      1,
+		"prompt":    userReflectorTmpl,
+		"params":    reflectorContext["user"],
+		"prompt_type": templates.PromptTypeQuestionReflector,
+		"iteration": iteration,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== PROMPT GENERATION: Reflector User Template Rendered ===")
+
+	// === REFLECTOR SYSTEM PROMPT ===
 	systemReflectorTmpl, err := fp.prompter.RenderTemplate(templates.PromptTypeReflector, reflectorContext["system"])
 	if err != nil {
 		return nil, wrapErrorEndSpan(ctx, reflectorSpan, "failed to get system reflector template", err)
 	}
+
+	// LOG REFLECTOR SYSTEM PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_system_prompt",
+		"flow":      1,
+		"prompt":    systemReflectorTmpl,
+		"params":    reflectorContext["system"],
+		"prompt_type": templates.PromptTypeReflector,
+		"iteration": iteration,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== PROMPT GENERATION: Reflector System Template Rendered ===")
 
 	advice, err := fp.performSimpleChain(ctx, taskID, subtaskID, optAgentType,
 		msgChainType, systemReflectorTmpl, userReflectorTmpl)
 	if err != nil {
 		advice = ToolPlaceholder
 	}
+
+	// LOG REFLECTOR ADVICE GENERATED
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_advice_generated",
+		"flow":      1,
+		"advice":    advice,
+		"iteration": iteration,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== PROMPT EXECUTION: Reflector Advice Generated ===")
 
 	opts := []langfuse.SpanEndOption{
 		langfuse.WithEndSpanStatus("failed"),
@@ -541,19 +827,51 @@ func (fp *flowProvider) performReflector(
 	defer reflectorSpan.End(opts...)
 
 	chain = append(chain, llms.TextParts(llms.ChatMessageTypeHuman, advice))
+	
+	// LOG REFLECTOR CHAIN UPDATED
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_chain_updated",
+		"flow":      1,
+		"updated_chain": chain,
+		"advice_added": advice,
+		"iteration": iteration,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== CHAIN MANAGEMENT: Reflector Chain Updated with Advice ===")
+
 	result, err := fp.callWithRetries(ctx, chain, optOriginType, executor)
 	if err != nil {
-		logger.WithError(err).Error("failed to call agent chain by reflector")
+		logrus.WithError(err).Error("failed to call agent chain by reflector")
 		opts = append(opts, langfuse.WithEndSpanStatus(err.Error()))
 		return nil, err
 	}
 
 	if err := fp.updateMsgChainUsage(ctx, chainID, result.info); err != nil {
-		logger.WithError(err).Error("failed to update msg chain usage")
+		logrus.WithError(err).Error("failed to update msg chain usage")
 		return nil, err
 	}
 
 	chain = append(chain, llms.TextParts(llms.ChatMessageTypeAI, result.content))
+	
+	// LOG REFLECTOR RESULT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-reflector-execution",
+		"action":    "reflector_result",
+		"flow":      1,
+		"result_content": result.content,
+		"result_thinking": result.thinking,
+		"result_tool_calls": result.funcCalls,
+		"tool_calls_count": len(result.funcCalls),
+		"iteration": iteration,
+		"chain_id":  chainID,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+	}).Info("=== PROMPT EXECUTION: Reflector Result Received ===")
+
 	if len(result.funcCalls) == 0 {
 		return fp.performReflector(ctx, optOriginType, chainID, taskID, subtaskID, chain,
 			humanMessage, result.content, executionContext, executor, iteration+1)

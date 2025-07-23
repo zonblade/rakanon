@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"pentagi/pkg/cast"
 	"pentagi/pkg/database"
 	"pentagi/pkg/providers/provider"
 	"pentagi/pkg/tools"
 
 	"github.com/vxcontrol/langchaingo/llms"
+
+	"github.com/sirupsen/logrus"
 )
 
 func (fp *flowProvider) performTaskResultReporter(
@@ -27,10 +28,26 @@ func (fp *flowProvider) performTaskResultReporter(
 		msgChainType = database.MsgchainTypeReporter
 	)
 
+	// LOG TASK RESULT REPORTER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-reporter-execution",
+		"action":    "task_result_reporter_execution_start",
+		"flow":      1,
+		"system_prompt": systemReporterTmpl,
+		"user_prompt":   userReporterTmpl,
+		"input":         input,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Task Result Reporter Execution Started ===")
+
 	chain := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemReporterTmpl),
 		llms.TextParts(llms.ChatMessageTypeHuman, userReporterTmpl),
 	}
+
 	cfg := tools.ReporterExecutorConfig{
 		TaskID:    taskID,
 		SubtaskID: subtaskID,
@@ -39,6 +56,20 @@ func (fp *flowProvider) performTaskResultReporter(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal task result: %w", err)
 			}
+			
+			// LOG REPORT RESULT TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-task-result-reporter-execution",
+				"action":    "report_result_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"task_result": taskResult,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== TOOL EXECUTION: Report Result Tool Called ===")
+			
 			return "report result successfully processed", nil
 		},
 	}
@@ -65,11 +96,36 @@ func (fp *flowProvider) performTaskResultReporter(
 		return nil, fmt.Errorf("failed to create msg chain: %w", err)
 	}
 
+	// LOG MSG CHAIN CREATED FOR REPORTER
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-reporter-execution",
+		"action":    "msg_chain_created_reporter",
+		"flow":      1,
+		"msg_chain_id": msgChain.ID,
+		"chain_type":   msgChainType,
+		"model":        fp.Model(optAgentType),
+		"task_id":      taskID,
+		"subtask_id":   subtaskID,
+	}).Info("=== CHAIN CREATION: Message Chain Created for Task Result Reporter ===")
+
 	ctx = tools.PutAgentContext(ctx, msgChainType)
 	err = fp.performAgentChain(ctx, optAgentType, msgChain.ID, taskID, subtaskID, chain, executor, fp.summarizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task reporter result: %w", err)
 	}
+
+	// LOG TASK RESULT REPORTER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-task-result-reporter-execution",
+		"action":    "task_result_reporter_execution_complete",
+		"flow":      1,
+		"final_task_result": taskResult,
+		"task_id":           taskID,
+		"subtask_id":        subtaskID,
+		"msg_chain_id":      msgChain.ID,
+	}).Info("=== PROMPT EXECUTION: Task Result Reporter Execution Complete ===")
 
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
@@ -97,6 +153,20 @@ func (fp *flowProvider) performSubtasksGenerator(
 		msgChainType = database.MsgchainTypeGenerator
 	)
 
+	// LOG SUBTASKS GENERATOR EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generator-execution",
+		"action":    "subtasks_generator_execution_start",
+		"flow":      1,
+		"system_prompt": systemGeneratorTmpl,
+		"user_prompt":   userGeneratorTmpl,
+		"input":         input,
+		"task_id":       taskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Subtasks Generator Execution Started ===")
+
 	chain := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemGeneratorTmpl),
 		llms.TextParts(llms.ChatMessageTypeHuman, userGeneratorTmpl),
@@ -121,6 +191,19 @@ func (fp *flowProvider) performSubtasksGenerator(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal subtask list: %w", err)
 			}
+			
+			// LOG SUBTASK LIST TOOL CALL
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-subtasks-generator-execution",
+				"action":    "subtask_list_tool_called",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"subtasks_parsed": subtaskList,
+				"task_id":   taskID,
+			}).Info("=== TOOL EXECUTION: Subtask List Tool Called ===")
+			
 			return "subtask list successfully processed", nil
 		},
 	}
@@ -146,11 +229,35 @@ func (fp *flowProvider) performSubtasksGenerator(
 		return nil, fmt.Errorf("failed to create msg chain: %w", err)
 	}
 
+	// LOG MSG CHAIN CREATED
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generator-execution",
+		"action":    "msg_chain_created",
+		"flow":      1,
+		"msg_chain_id": msgChain.ID,
+		"chain_type":   msgChainType,
+		"model":        fp.Model(optAgentType),
+		"task_id":      taskID,
+	}).Info("=== CHAIN CREATION: Message Chain Created for Subtasks Generator ===")
+
 	ctx = tools.PutAgentContext(ctx, msgChainType)
 	err = fp.performAgentChain(ctx, optAgentType, msgChain.ID, &taskID, nil, chain, executor, fp.summarizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtasks generator result: %w", err)
 	}
+
+	// LOG SUBTASKS GENERATOR EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generator-execution",
+		"action":    "subtasks_generator_execution_complete",
+		"flow":      1,
+		"generated_subtasks": subtaskList.Subtasks,
+		"subtasks_count":     len(subtaskList.Subtasks),
+		"task_id":            taskID,
+		"msg_chain_id":       msgChain.ID,
+	}).Info("=== PROMPT EXECUTION: Subtasks Generator Execution Complete ===")
 
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
@@ -179,73 +286,92 @@ func (fp *flowProvider) performSubtasksRefiner(
 		msgChainType = database.MsgchainTypeRefiner
 	)
 
+	// LOG SUBTASKS REFINER EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-refiner-execution",
+		"action":    "subtasks_refiner_execution_start",
+		"flow":      1,
+		"system_prompt": systemRefinerTmpl,
+		"user_prompt":   userRefinerTmpl,
+		"input":         input,
+		"task_id":       taskID,
+		"agent_type":    optAgentType,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Subtasks Refiner Execution Started ===")
+
 	restoreChain := func(msgChain json.RawMessage) ([]llms.MessageContent, error) {
 		var msgList []llms.MessageContent
 		err := json.Unmarshal(msgChain, &msgList)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal msg chain: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal chain: %w", err)
 		}
-
-		ast, err := cast.NewChainAST(msgList, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create refiner chain ast: %w", err)
-		}
-
-		if len(ast.Sections) == 0 {
-			return nil, fmt.Errorf("failed to get sections from refiner chain ast")
-		}
-
-		systemSection := ast.Sections[0] // there may be multiple sections due to reflector agent
-		systemMessage := llms.TextParts(llms.ChatMessageTypeSystem, systemRefinerTmpl)
-		systemSection.Header.SystemMessage = &systemMessage
-		humanMessage := llms.TextParts(llms.ChatMessageTypeHuman, userRefinerTmpl)
-		systemSection.Header.HumanMessage = &humanMessage
-		// remove the last report with subtasks list
-		for idx := len(systemSection.Body) - 1; idx >= 0; idx-- {
-			if systemSection.Body[idx].Type == cast.RequestResponse {
-				systemSection.Body = systemSection.Body[:idx]
-				break
-			}
-		}
-		// remove all past completions
-		for idx := len(systemSection.Body) - 1; idx >= 0; idx-- {
-			if systemSection.Body[idx].Type != cast.Completion {
-				systemSection.Body = systemSection.Body[:idx+1]
-				break
-			}
-		}
-
-		// restore the chain
-		return systemSection.Messages(), nil
+		return msgList, nil
 	}
-
+	
 	msgChain, err := fp.db.GetFlowTaskTypeLastMsgChain(ctx, database.GetFlowTaskTypeLastMsgChainParams{
 		FlowID: fp.flowID,
 		TaskID: database.Int64ToNullInt64(&taskID),
 		Type:   msgChainType,
 	})
-	if err != nil || isEmptyChain(msgChain.Chain) {
-		// fallback to generator chain if refiner chain is not found or empty
-		msgChain, err = fp.db.GetFlowTaskTypeLastMsgChain(ctx, database.GetFlowTaskTypeLastMsgChainParams{
-			FlowID: fp.flowID,
-			TaskID: database.Int64ToNullInt64(&taskID),
-			Type:   database.MsgchainTypeGenerator,
+	var msgChainID int64
+	if err != nil {
+		// Create new chain
+		chain = []llms.MessageContent{
+			llms.TextParts(llms.ChatMessageTypeSystem, systemRefinerTmpl),
+			llms.TextParts(llms.ChatMessageTypeHuman, userRefinerTmpl),
+		}
+
+		chainBlob, err := json.Marshal(chain)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal msg chain: %w", err)
+		}
+
+		msgChainRecord, err := fp.db.CreateMsgChain(ctx, database.CreateMsgChainParams{
+			Type:          msgChainType,
+			Model:         fp.Model(optAgentType),
+			ModelProvider: string(fp.Type()),
+			Chain:         chainBlob,
+			FlowID:        fp.flowID,
+			TaskID:        database.Int64ToNullInt64(&taskID),
 		})
-		if err != nil || isEmptyChain(msgChain.Chain) {
-			// is unexpected, but we should fallback to empty chain
-			chain = []llms.MessageContent{
-				llms.TextParts(llms.ChatMessageTypeSystem, systemRefinerTmpl),
-				llms.TextParts(llms.ChatMessageTypeHuman, userRefinerTmpl),
-			}
-		} else {
-			if chain, err = restoreChain(msgChain.Chain); err != nil {
-				return nil, fmt.Errorf("failed to restore chain from generator state: %w", err)
-			}
+		if err != nil {
+			return nil, fmt.Errorf("failed to create msg chain: %w", err)
 		}
+		msgChainID = msgChainRecord.ID
+
+		// LOG NEW MSG CHAIN CREATED
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-subtasks-refiner-execution",
+			"action":    "msg_chain_created_new",
+			"flow":      1,
+			"msg_chain_id": msgChainID,
+			"chain_type":   msgChainType,
+			"model":        fp.Model(optAgentType),
+			"task_id":      taskID,
+			"initial_chain": chain,
+		}).Info("=== CHAIN CREATION: New Message Chain Created for Subtasks Refiner ===")
 	} else {
-		if chain, err = restoreChain(msgChain.Chain); err != nil {
-			return nil, fmt.Errorf("failed to restore chain from refiner state: %w", err)
+		// Restore existing chain
+		chain, err = restoreChain(msgChain.Chain)
+		if err != nil {
+			return nil, fmt.Errorf("failed to restore chain: %w", err)
 		}
+		msgChainID = msgChain.ID
+
+		// LOG EXISTING MSG CHAIN RESTORED
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-subtasks-refiner-execution",
+			"action":    "msg_chain_restored",
+			"flow":      1,
+			"msg_chain_id": msgChainID,
+			"chain_type":   msgChainType,
+			"model":        fp.Model(optAgentType),
+			"task_id":      taskID,
+			"restored_chain_length": len(chain),
+		}).Info("=== CHAIN RESTORATION: Existing Message Chain Restored for Subtasks Refiner ===")
 	}
 
 	memorist, err := fp.GetMemoristHandler(ctx, &taskID, nil)
@@ -267,6 +393,19 @@ func (fp *flowProvider) performSubtasksRefiner(
 			if err != nil {
 				return "", fmt.Errorf("failed to unmarshal subtask list: %w", err)
 			}
+			
+			// LOG SUBTASK LIST TOOL CALL IN REFINER
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-subtasks-refiner-execution",
+				"action":    "subtask_list_tool_called_refiner",
+				"flow":      1,
+				"tool_name": name,
+				"tool_args": string(args),
+				"subtasks_refined": subtaskList,
+				"task_id":   taskID,
+			}).Info("=== TOOL EXECUTION: Subtask List Tool Called in Refiner ===")
+			
 			return "subtask list successfully processed", nil
 		},
 	}
@@ -275,28 +414,23 @@ func (fp *flowProvider) performSubtasksRefiner(
 		return nil, fmt.Errorf("failed to get generator executor: %w", err)
 	}
 
-	chainBlob, err := json.Marshal(chain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal msg chain: %w", err)
-	}
-
-	msgChain, err = fp.db.CreateMsgChain(ctx, database.CreateMsgChainParams{
-		Type:          msgChainType,
-		Model:         fp.Model(optAgentType),
-		ModelProvider: string(fp.Type()),
-		Chain:         chainBlob,
-		FlowID:        fp.flowID,
-		TaskID:        database.Int64ToNullInt64(&taskID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create msg chain: %w", err)
-	}
-
 	ctx = tools.PutAgentContext(ctx, msgChainType)
-	err = fp.performAgentChain(ctx, optAgentType, msgChain.ID, &taskID, nil, chain, executor, fp.summarizer)
+	err = fp.performAgentChain(ctx, optAgentType, msgChainID, &taskID, nil, chain, executor, fp.summarizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtasks refiner result: %w", err)
 	}
+
+	// LOG SUBTASKS REFINER EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-refiner-execution",
+		"action":    "subtasks_refiner_execution_complete",
+		"flow":      1,
+		"refined_subtasks": subtaskList.Subtasks,
+		"subtasks_count":   len(subtaskList.Subtasks),
+		"task_id":          taskID,
+		"msg_chain_id":     msgChainID,
+	}).Info("=== PROMPT EXECUTION: Subtasks Refiner Execution Complete ===")
 
 	if agentCtx, ok := tools.GetAgentContext(ctx); ok {
 		fp.agentLog.PutLog(
@@ -750,6 +884,20 @@ func (fp *flowProvider) performSimpleChain(
 		err  error
 	)
 
+	// LOG SIMPLE CHAIN EXECUTION START
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-simple-chain-execution",
+		"action":    "simple_chain_execution_start",
+		"flow":      1,
+		"system_prompt": systemTmpl,
+		"user_prompt":   userTmpl,
+		"task_id":       taskID,
+		"subtask_id":    subtaskID,
+		"agent_type":    opt,
+		"chain_type":    msgChainType,
+	}).Info("=== PROMPT EXECUTION: Simple Chain Execution Started ===")
+
 	chain := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, systemTmpl),
 		llms.TextParts(llms.ChatMessageTypeHuman, userTmpl),
@@ -760,10 +908,45 @@ func (fp *flowProvider) performSimpleChain(
 			return "", fmt.Errorf("failed to call simple chain: %w", err)
 		}
 
+		// LOG SIMPLE CHAIN CALL ATTEMPT
+		logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"type":      "MARKER",
+			"component": "pentagi-simple-chain-execution",
+			"action":    "simple_chain_call_attempt",
+			"flow":      1,
+			"attempt":   idx + 1,
+			"max_retries": maxRetriesToCallSimpleChain,
+			"task_id":   taskID,
+			"subtask_id": subtaskID,
+		}).Info("=== PROMPT EXECUTION: Simple Chain Call Attempt ===")
+
 		resp, err = fp.CallEx(ctx, opt, chain, nil)
 		if err == nil {
+			// LOG SIMPLE CHAIN CALL SUCCESS
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-simple-chain-execution",
+				"action":    "simple_chain_call_success",
+				"flow":      1,
+				"attempt":   idx + 1,
+				"choices_count": len(resp.Choices),
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== PROMPT EXECUTION: Simple Chain Call Successful ===")
 			break
 		} else {
+			// LOG SIMPLE CHAIN CALL FAILURE
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-simple-chain-execution",
+				"action":    "simple_chain_call_failure",
+				"flow":      1,
+				"attempt":   idx + 1,
+				"error":     err.Error(),
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Warn("=== PROMPT EXECUTION: Simple Chain Call Failed ===")
+
 			if errors.Is(err, context.Canceled) {
 				return "", err
 			}
@@ -789,6 +972,22 @@ func (fp *flowProvider) performSimpleChain(
 	}
 	chain = append(chain, llms.TextParts(llms.ChatMessageTypeAI, parts...))
 
+	result := strings.Join(parts, "\n\n")
+
+	// LOG SIMPLE CHAIN EXECUTION COMPLETE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-simple-chain-execution",
+		"action":    "simple_chain_execution_complete",
+		"flow":      1,
+		"result":    result,
+		"input_tokens":  inputTokens,
+		"output_tokens": outputTokens,
+		"task_id":   taskID,
+		"subtask_id": subtaskID,
+		"chain_type": msgChainType,
+	}).Info("=== PROMPT EXECUTION: Simple Chain Execution Complete ===")
+
 	chainBlob, err := json.Marshal(chain)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal summarizer msg chain: %w", err)
@@ -806,5 +1005,5 @@ func (fp *flowProvider) performSimpleChain(
 		SubtaskID:     database.Int64ToNullInt64(subtaskID),
 	})
 
-	return strings.Join(parts, "\n\n"), nil
+	return result, nil
 }

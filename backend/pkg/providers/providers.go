@@ -181,6 +181,7 @@ func (pc *providerController) NewFlowProvider(
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
 
+	// === IMAGE CHOOSER PROMPT ===
 	imageTmpl, err := prompter.RenderTemplate(templates.PromptTypeImageChooser, map[string]any{
 		"DefaultImage":           pc.docker.GetDefaultImage(),
 		"DefaultImageForPentest": pc.defaultDockerImageForPentest,
@@ -190,12 +191,38 @@ func (pc *providerController) NewFlowProvider(
 		return nil, fmt.Errorf("failed to get primary docker image template: %w", err)
 	}
 
+	// LOG IMAGE CHOOSER PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "image_chooser_prompt",
+		"flow":      1,
+		"prompt":    imageTmpl,
+		"params": map[string]any{
+			"DefaultImage":           pc.docker.GetDefaultImage(),
+			"DefaultImageForPentest": pc.defaultDockerImageForPentest,
+			"Input":                  input,
+		},
+		"prompt_type": templates.PromptTypeImageChooser,
+	}).Info("=== PROMPT GENERATION: Image Chooser Template Rendered ===")
+
 	image, err := prv.Call(ctx, provider.OptionsTypeSimple, imageTmpl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get primary docker image: %w", err)
 	}
 	image = strings.ToLower(strings.TrimSpace(image))
 
+	// LOG IMAGE CHOOSER RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "image_chooser_response",
+		"flow":      1,
+		"response":  image,
+		"prompt_type": templates.PromptTypeImageChooser,
+	}).Info("=== PROMPT RESPONSE: Image Chooser Response Received ===")
+
+	// === LANGUAGE CHOOSER PROMPT ===
 	languageTmpl, err := prompter.RenderTemplate(templates.PromptTypeLanguageChooser, map[string]any{
 		"Input": input,
 	})
@@ -203,12 +230,36 @@ func (pc *providerController) NewFlowProvider(
 		return nil, fmt.Errorf("failed to get language template: %w", err)
 	}
 
+	// LOG LANGUAGE CHOOSER PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "language_chooser_prompt",
+		"flow":      1,
+		"prompt":    languageTmpl,
+		"params": map[string]any{
+			"Input": input,
+		},
+		"prompt_type": templates.PromptTypeLanguageChooser,
+	}).Info("=== PROMPT GENERATION: Language Chooser Template Rendered ===")
+
 	language, err := prv.Call(ctx, provider.OptionsTypeSimple, languageTmpl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get language: %w", err)
 	}
 	language = strings.TrimSpace(language)
 
+	// LOG LANGUAGE CHOOSER RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "language_chooser_response",
+		"flow":      1,
+		"response":  language,
+		"prompt_type": templates.PromptTypeLanguageChooser,
+	}).Info("=== PROMPT RESPONSE: Language Chooser Response Received ===")
+
+	// === FLOW DESCRIPTOR PROMPT ===
 	titleTmpl, err := prompter.RenderTemplate(templates.PromptTypeFlowDescriptor, map[string]any{
 		"Input":       input,
 		"Lang":        language,
@@ -219,11 +270,37 @@ func (pc *providerController) NewFlowProvider(
 		return nil, fmt.Errorf("failed to get flow title template: %w", err)
 	}
 
+	// LOG FLOW DESCRIPTOR PROMPT
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "flow_descriptor_prompt",
+		"flow":      1,
+		"prompt":    titleTmpl,
+		"params": map[string]any{
+			"Input":       input,
+			"Lang":        language,
+			"CurrentTime": getCurrentTime(),
+			"N":           20,
+		},
+		"prompt_type": templates.PromptTypeFlowDescriptor,
+	}).Info("=== PROMPT GENERATION: Flow Descriptor Template Rendered ===")
+
 	title, err := prv.Call(ctx, provider.OptionsTypeSimple, titleTmpl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flow title: %w", err)
 	}
 	title = strings.TrimSpace(title)
+
+	// LOG FLOW DESCRIPTOR RESPONSE
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-providers-creation",
+		"action":    "flow_descriptor_response",
+		"flow":      1,
+		"response":  title,
+		"prompt_type": templates.PromptTypeFlowDescriptor,
+	}).Info("=== PROMPT RESPONSE: Flow Descriptor Response Received ===")
 
 	fp := &flowProvider{
 		db:          db,
