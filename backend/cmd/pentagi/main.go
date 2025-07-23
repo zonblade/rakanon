@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -29,6 +30,28 @@ import (
 )
 
 func main() {
+	// ── Setup Logrus to write both to STDOUT and /log/server.log ──
+	if err := os.MkdirAll("/log", 0o755); err != nil {
+		log.Fatalf("unable to create log directory: %v", err)
+	}
+
+	logfile, err := os.OpenFile("/log/server.log",
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Fatalf("unable to open log file: %v", err)
+	}
+	// Send every Logrus entry to both the console and the file
+	mw := io.MultiWriter(os.Stdout, logfile)
+	logrus.SetOutput(mw)
+	logrus.SetFormatter(&logrus.JSONFormatter{
+		TimestampFormat: time.RFC3339,
+	})
+	logrus.SetLevel(logrus.InfoLevel)
+
+	// OPTIONAL: make the std‑lib logger share the same destination
+	log.SetOutput(logrus.StandardLogger().Writer())
+	defer logfile.Close()
+
 	ctx := context.Background()
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
