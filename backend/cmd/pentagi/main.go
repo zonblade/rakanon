@@ -35,7 +35,7 @@ func main() {
 		log.Fatalf("unable to create log directory: %v", err)
 	}
 
-	logfile, err := os.OpenFile("/log/server.log",
+	logfile, err := os.OpenFile("/log/server.jsonl",
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		log.Fatalf("unable to open log file: %v", err)
