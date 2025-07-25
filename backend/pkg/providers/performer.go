@@ -266,6 +266,19 @@ func (fp *flowProvider) performAgentChain(
 				"subtask_id": subtaskID,
 			}).Info("=== TOOL EXECUTION: Individual Tool Call Completed ===")
 
+			// LOG BEFORE CHAIN APPEND - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "before_chain_append",
+				"flow":      1,
+				"tool_name": funcName,
+				"chain_length_before": len(chain),
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: About to append tool response to chain ===")
+
 			chain = append(chain, llms.MessageContent{
 				Role: llms.ChatMessageTypeTool,
 				Parts: []llms.ContentPart{
@@ -276,10 +289,59 @@ func (fp *flowProvider) performAgentChain(
 					},
 				},
 			})
+
+			// LOG AFTER CHAIN APPEND - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "after_chain_append",
+				"flow":      1,
+				"tool_name": funcName,
+				"chain_length_after": len(chain),
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: Successfully appended tool response to chain ===")
+			// LOG BEFORE UPDATE MSG CHAIN - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "before_update_msg_chain",
+				"flow":      1,
+				"tool_name": funcName,
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: About to update message chain in database ===")
+
 			if err := fp.updateMsgChain(ctx, chainID, chain); err != nil {
 				logger.WithError(err).Error("failed to update msg chain")
 				return err
 			}
+
+			// LOG AFTER UPDATE MSG CHAIN - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "after_update_msg_chain",
+				"flow":      1,
+				"tool_name": funcName,
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: Successfully updated message chain in database ===")
+
+			// LOG BEFORE BARRIER CHECK - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "before_barrier_check",
+				"flow":      1,
+				"tool_name": funcName,
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: About to check if function is barrier ===")
 
 			if executor.IsBarrierFunction(funcName) {
 				// LOG BARRIER FUNCTION DETECTED
@@ -324,6 +386,17 @@ func (fp *flowProvider) performAgentChain(
 				"task_id":   taskID,
 				"subtask_id": subtaskID,
 			}).Info("=== PROMPT EXECUTION: Agent Chain Execution Stopping ===")
+			
+			// LOG BEFORE RETURN - CRASH DEBUG
+			logrus.WithContext(ctx).WithFields(logrus.Fields{
+				"type":      "MARKER",
+				"component": "pentagi-agent-chain-execution",
+				"action":    "before_return_from_agent_chain",
+				"flow":      1,
+				"chain_id":  chainID,
+				"task_id":   taskID,
+				"subtask_id": subtaskID,
+			}).Info("=== DEBUG: About to return from performAgentChain ===")
 			
 			return nil
 		}
@@ -432,12 +505,6 @@ func (fp *flowProvider) execToolCall(
 
 		response, err = executor.Execute(ctx, streamID, toolCall.ID, funcName, thinking, funcArgs)
 		if err != nil {
-			logger.WithFields(logrus.Fields{
-				"response_size":   len(response),
-				"response_preview": response[:min(300, len(response))],
-				"success":         true,
-			}).Info("=== TOOLS CALLING: Tool call completed successfully ===")
-			
 			if errors.Is(err, context.Canceled) {
 				return "", err
 			}
@@ -461,11 +528,6 @@ func (fp *flowProvider) execToolCall(
 				return "", fmt.Errorf("failed to fix tool call args: %w", err)
 			}
 		} else {
-			logger.WithFields(logrus.Fields{
-				"error":    err.Error(),
-				"retry":    idx,
-				"success":  false,
-			}).Warn("=== TOOLS CALLING: Tool call failed, retrying ===")
 			break
 		}
 	}

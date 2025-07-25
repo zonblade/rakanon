@@ -242,10 +242,32 @@ func (fp *flowProvider) performSubtasksGenerator(
 	}).Info("=== CHAIN CREATION: Message Chain Created for Subtasks Generator ===")
 
 	ctx = tools.PutAgentContext(ctx, msgChainType)
+	
+	// LOG BEFORE PERFORM AGENT CHAIN - CRASH DEBUG
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generator-execution",
+		"action":    "before_perform_agent_chain",
+		"flow":      1,
+		"chain_id":  msgChain.ID,
+		"task_id":   taskID,
+	}).Info("=== DEBUG: About to call performAgentChain for subtask generation ===")
+	
 	err = fp.performAgentChain(ctx, optAgentType, msgChain.ID, &taskID, nil, chain, executor, fp.summarizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtasks generator result: %w", err)
 	}
+
+	// LOG AFTER PERFORM AGENT CHAIN - CRASH DEBUG
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"type":      "MARKER",
+		"component": "pentagi-subtasks-generator-execution",
+		"action":    "after_perform_agent_chain",
+		"flow":      1,
+		"chain_id":  msgChain.ID,
+		"task_id":   taskID,
+		"subtasks_count": len(subtaskList.Subtasks),
+	}).Info("=== DEBUG: Successfully returned from performAgentChain ===")
 
 	// LOG SUBTASKS GENERATOR EXECUTION COMPLETE
 	logrus.WithContext(ctx).WithFields(logrus.Fields{
